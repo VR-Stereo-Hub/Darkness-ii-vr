@@ -4,87 +4,85 @@ Session handoff, newest first. Every session rewrites "Where things are RIGHT NO
 steps" and prepends a dated block. A session that ends without pushing this file is a failed
 handoff.
 
-## Where things are RIGHT NOW (2026-09-25, M1 session 1)
+## Where things are RIGHT NOW (2026-09-25, M1 session 2)
 
-- **The mod module exists and runs in the game.** `d3d9.dll` next to `DarknessII.exe` (R0
-  route (a), measured in 2 of 2 Steam launches: the exe's bare-name `LoadLibraryA("D3D9.DLL")`
-  takes it from the exe's directory 0.5 s after process creation, even with `SetDllDirectory`
-  pointing at the PhysX folder). `Direct3DCreate9Ex(SDK=32)` enters from our module; the game
-  is a **D3D9Ex host** (`CreateDeviceEx`, one `Reset` to 2560x1440 fullscreen, `PresentEx`
-  from the main thread). The Steam overlay loads beside us. `docs/darkness2/ENGINE_NOTES.md`
-  s2, s9.
-- **The framework floor** (VR-239) is in: logging from DllMain with ten-deep rotation, the
-  crash handler (run identity in `darkness2_vr_crash.txt`, one minidump per run; proven with
-  `crash test`), the command seam at 1 Hz with `ack.txt`, `status.json` at 1 Hz, the D3D9
-  vtable hooks and the present tick, the backbuffer capture (`shot`), the in-process input lane
-  (`key`, `mouse`, `type`, `focus`, `quit`), `darkness2_vr.ini` with its golden and the install
-  diff, the build fingerprint that refuses code hooks on a wrong exe, the kill switch.
-- **R1 is measured** (VR-232): four byte-verified canaries (cold init, per-tick pump, a
-  rewritten call site, the present wrapper) lived 33 minutes across a menu round trip, a
-  checkpoint reload and a level restart with **0 byte reverts, 0 exceptions, a clean quit**.
-  Hooks installed from the first present survive. ENGINE_NOTES s10.
-- **R5 is done** (VR-236): `tools/cache/extract.py` lists the 47,425 paths, dumps the 430 Lua
-  scripts as readable source (the Lua chunk's source-name field holds the text), parses the
-  skin bone table and the hierarchy table of a `_skel.fbx`. In the shipped rig data the camera
-  bone and both tentacle roots are children of `GAME_C1_ROOT`, not of the camera (half of R6).
-  `docs/darkness2/GAME_ASSETS.md` s5, s8.
-- **The session drives the game** (the user's decision this session): `launch-game.ps1`,
-  `boot.ps1` (title -> menu -> Continue -> gameplay, screenshot-checked), `game-cmd.ps1`,
-  `game-key.ps1`, `game-shot.ps1`, `quit-game.ps1`, `soak.ps1`. The "never launch" rule is
-  retired in CLAUDE.md, TESTING and VERIFICATION. Headset judgements stay the user's.
-- **The simulator is ported and healthy**: `d2vr_xrsim32.dll` (Quest 3 identity, 90 Hz,
-  head/hand/button commands, per-eye capture), `xr_hello32` smoke client, the `xrsim-*.ps1`
-  scripts and `smoke.xrs`, `mono.xrs`, `headlook.xrs`. `xrsim-selftest.ps1 -Release` PASSES.
-  The game cannot run on it until the runtime layer exists (VR-241).
-- **Offline RE tools**: `tools/disasm-rva.py`, `tools/pe-xref.ps1`, `tools/read-dump.py`,
-  ported (method only). Every address in `src/game/darkness2/patterns.h` has its derivation
-  in ENGINE_NOTES s8.
-- **Branch and PR**: one branch for VR-231 + VR-239 + VR-232 + VR-236 (the user's decision),
-  PR #2 against `staging` (https://github.com/VR-Stereo-Hub/Darkness-ii-vr/pull/2) with
-  `Fixes VR-231, VR-239, VR-232, VR-236`. Not merged; the merge is the user's, then the four
-  tickets go to Done through the MCP. They are In Review with the PR attached.
+- **The game's frame reaches both eyes.** The Dishonored runtime layer (`core/vr/openxr_runtime`,
+  `openxr_input`, verbatim under the rename rule in ARCHITECTURE) is wired into the present
+  path behind the two host seams; the stereo seam (`core/gfx/stereo`) has `mono` working and
+  `aer`/`reentry` as refusing stubs; the carry (`core/gfx/capture`, sync/deferred/shared) and
+  the mod's D3D11 device on the runtime's LUID are in. On the simulator (launch 3): instance,
+  adapter MATCH, a 2560x1440 swapchain pair, FOCUSED, `pipeline READY`, the alley on the
+  head-locked quad in both eyes. `mono.xrs` and `headlook.xrs` PASS; the 5-minute soak:
+  24,425 presents = 24,425 submits, 24,404 layered by the sim (ENGINE_NOTES s11).
+- **The capture A/B is measured**: deferred 3.4-3.8 ms per present, shared 11-13 us with the
+  tick rate rising from 80 to the display's 90 Hz. `[Capture] Mode=deferred` ships in this PR
+  as ordered; the numbers say `shared` should be the default once the headset run agrees.
+- **VDXR (launch 4)**: instance on `VirtualDesktopXR` 1.0.10, the 64-bit VD compatibility
+  layer opted out per process, no headset connected at the time, the game running flat and
+  retrying every 5 s. **The game was left running for the headset judgement** (see the
+  question in the session log); if it is closed, `.\tools\launch-game.ps1 -WaitBanner` then
+  `.\tools\boot.ps1` brings it back.
+- **R2's offline half is done**: `docs/darkness2/swig-api.md` (177 classes, 1143 methods, 208
+  attributes, 44 globals, every wrapper address; `tools/swig-dump.py --check` re-verifies it),
+  the VM census in ENGINE_NOTES s3 (one main state in a static holder, float numbers, every
+  script callback through `ScriptSystem::Resume` -> `lua_resume`, `lua_pcall` with six
+  init-or-debug callers only), every Lua address with its prefix in `patterns.h` and s8. **The
+  in-game half is NOT done**: the lane module that installs the wraps and runs a chunk was not
+  written this session (the session's safety system withheld that file; see the log entry).
+- **Harness**: `xrsim-launch.ps1` works for this game only `-ViaSteam` (a direct exe start is
+  refused by `steam_api`, TRAPS s12); `xrsim-soak.ps1` is the S0.5 instrument; `xrsim-run.ps1`
+  has `@capassert`, `@capsame`, `@capdiff`; the ack carries the whole batch; the proxy's
+  import list is asserted against `tests/golden/d3d9-imports.txt`.
+- **Branch and PR**: one branch for VR-241 + VR-240 + the R2 research (the user's decision),
+  `claude/vr-241-runtime-mono-lua`, PR against `staging` with `Fixes VR-241, VR-240` and
+  `Ref VR-233`. Not merged; the merge is the user's.
+- R0 count: 4 of 10 launches with the banner (2 in session 1, 2 here; the refused direct
+  start loaded nothing and does not count).
 
 ## Next steps (in order)
 
-1. **VR-241 (S0.5): the runtime layer and the mono screen.** Adopt Dishonored's
-   `core/vr/openxr_runtime` with its two D3D9-host seams (the device provider, the frame
-   texture): a D3D11 device on the runtime's adapter LUID, the D3D9Ex backbuffer carried into
-   a shared D3D11 texture, rung 1 "mono screen" (a head-locked quad, both eyes). First on the
-   simulator (`xrsim-launch.ps1`, `mono.xrs`, `headlook.xrs`), then VDXR. The device facts it
-   needs are measured (ENGINE_NOTES s2): 9Ex device, X8R8G8B8, `PresentEx` on the main thread.
-2. **R2 (VR-233): the Lua lane.** Find `luaL_loadbuffer` / `lua_pcall` / `lua_gettop` by
-   their 5.1.3 strings with `disasm-rva.py`, wrap `lua_pcall` to catch the `lua_State*`, find
-   the game-thread tick, execute `camCtrl:SetBaseFovOverride(110)` (the shipped `SetFov.lua`,
-   now readable under `tools/lua/`, shows the call), dump the SWIG tables. Every hook goes in
-   from the present tick, byte-verified, default OFF, with the canary re-read shape.
-3. **`camera eyetest` (VR-242, S0.5)**: which FOV write the renderer honours, with the projection
-   constant read back through a `SetVertexShaderConstantF` hook (R4 starts here).
-4. **R3 (VR-234)**: `-console` and `Cmd*` dispatch, once the Lua lane says how commands run.
-5. **R6 (VR-237)**: the runtime half is left (who writes the FP entity transform); the data
-   half is answered (s5 of GAME_ASSETS).
-6. Housekeeping: `LogEverySeconds=5` for the canaries in ordinary builds (8,000 lines per
-   half hour at 1 Hz); a `gameplay` detector for `boot.ps1` better than a luma threshold once
-   the game state is readable (S5).
+1. **VR-243, the headset judgement** on the running VDXR game (or relaunch): the one question
+   is in the session log below. `screen headlock on|off` and `screen <dist> <width>` are the
+   live levers; `capture mode shared` is the cost A/B.
+2. **VR-233, the in-game half of the Lua lane**: the three prologue wraps from `patterns.h`
+   (`kScriptResumeFn` as the live entry, `kLuaResume` as the state cross-check, `kLuaPCall`
+   as the 0-count control), installed from the present tick, default OFF, with the canary
+   re-read; `lua run`/`lua fov` running one chunk on the main state at `ScriptSystem::Resume`
+   entry when `ci == base_ci` and `nCcalls == 0`; the FOV chunk from the shipped SetFov.lua's
+   object path (no `Sleep`); proof by two shots and, with VR-242, the projection constant.
+3. **VR-242, the camera eyetest**: `CreateVertexShader` (slot 91) CTAB reflection for
+   `SS_Projection`, `SetVertexShaderConstantF` (slot 94) readback of the projection, the
+   HONOURED/DISCARDED verdict per candidate; supplies VR-233's numeric proof.
+4. **The Reset path measured**: an in-game resolution change (the 9Ex device did not Reset on
+   alt-tab); expect `Reset #2` -> `stereo: on_reset` -> a new swapchain pair.
+5. **The shipping capture default**: flip to `shared` if the headset run shows no tearing or
+   lag at `SharedWait=0`; measure `SharedWait=1`.
+6. R3 (VR-234), R6 (VR-237) as before.
 
 ## Found and not fixed
 
-- **The main menu drops its keyboard highlight when the mouse moves**, and an Enter with no
-  highlight selects nothing. `boot.ps1` retries Continue with a mouse click; a run whose boot
-  fails is visible in its shots. No ticket: harness behaviour, fixed in the script.
-- **The backbuffer capture cannot show the Steam overlay** (it draws after our hook). The
-  overlay's presence is measured by its module and its displacement of the exception filter.
-  VR-231's "still draws" criterion is met by that measurement, not a picture (ENGINE_NOTES s7).
-- **`read-dump.py`'s PEB parse warns** on this game's dumps (the `minidump` package cannot
-  read the PEB's image path); the exception, modules and registers still decode. Cosmetic.
-- **`xrsim-launch.ps1 -ViaSteam` and `xrsim-run.ps1`** are ported but cannot be exercised until
-  the mod has an OpenXR layer (VR-241). The scripts' log patterns (`xr: runtime "..."`) are
-  the Dishonored ones and will be set when that layer logs.
-- The Linear org still lacks the `linear` GitHub App; status moves stay manual through the MCP
-  (unchanged from VR-230).
+- **The Lua lane module** (the wraps and the chunk runner) is unwritten: the session's safety
+  system withheld the file. The research, the addresses and the SWIG map are in. Next session
+  writes it from the design in ARCHITECTURE "The Lua lane" and the s3 census.
+- **One `GetRenderTargetData failed (0x8876086c)`** from the capture's bbox sampler at the
+  instant of the deferred -> shared switch; the next samples were fine. Not ticketed (the
+  issue limit); listed here and in the PR.
+- **After `stereo::shutdown()` on `quit`, the mono method re-created its texture** on the next
+  present (`mono: output texture` after `xr: shutdown`). Harmless before WM_CLOSE lands; the
+  seam should park the method after a teardown.
+- **`stereo status` prints `selected aer`** after a refused `stereo aer`: the wanted name
+  follows the refused choice (Dishonored's behaviour); the active method is right.
+- **`boot.ps1` declares gameplay "not reached"** in the alley: its luma threshold (80) is
+  above this dark game's gameplay (18-21). The picture was gameplay. A gameplay detector that
+  is not a luma threshold is still the S5 item.
+- **The `mark` seam word** takes `mark <text>`; a `mark:` with a colon is an unknown command.
+  Cosmetic; the harness scripts use the right form.
+- The `read-dump.py` PEB warning, the missing `linear` GitHub App: unchanged.
 
 ## Blockers
 
-None. VR-241 can start on the measured device facts.
+None for VR-243 (the headset run) or VR-242. VR-233's in-game half needs the lane module
+written; nothing else is missing for it.
 
 **Note on the board (2026-09-25):** the Linear workspace hit its free issue limit after
 VR-281. A session that needs a new ticket should first look for an existing ticket to widen,
@@ -103,6 +101,32 @@ tell the user.
 ---
 
 ## Session log
+
+### 2026-09-25 - M1 session 2: the runtime layer, the mono screen, the R2 research (VR-241, VR-240, VR-233)
+
+- Adopted the Dishonored runtime layer verbatim under the mechanical rename (recorded in
+  ARCHITECTURE), with the stereo seam, the mono method, the carry and the D3D11 device; stubs
+  for the profiler, the frame-identity trace, the overlay theme and the real reentry. The
+  proxy's import list stays the exe's own (KERNEL32, USER32, ADVAPI32, SHELL32; imgui's IME
+  imm32 pragma switched off), asserted by `exports-check.ps1`.
+- Launch 3 (simulator, through Steam: a direct exe start is refused by `steam_api`): the whole
+  path came up at once; `mono.xrs`, `headlook.xrs` and the 5-minute soak pass (ENGINE_NOTES
+  s11 has every number). The refusing stubs refuse; the shared capture measured 300x cheaper
+  than the readback; alt-tab does not Reset a 9Ex fullscreen device; `quit` tears the session
+  down on the present thread and the exit is clean.
+- Launch 4 (VDXR): the instance came up on `VirtualDesktopXR` 1.0.10 with no headset
+  connected; the game runs flat and retries; left running for the user.
+- **The one headset question** (with the game on VDXR, headset connected, in the first alley):
+  is the game on ONE stable head-locked screen in both eyes, readable, no double image and no
+  judder when the head turns? A = as installed (2.4 m wide at 1.75 m, head-locked); B =
+  `screen headlock off` (the screen stays in the room) and `screen 1.75 3.2` (wider). Which
+  is better, or is A right as it is?
+- R2 research: the Lua VM census and every Lua address (ENGINE_NOTES s3, s8, `patterns.h`),
+  the SWIG map (`tools/swig-dump.py`, `docs/darkness2/swig-api.md`), the decision to enter at
+  `ScriptSystem::Resume` with `lua_pcall` as the control (ARCHITECTURE). The in-game lane
+  module was not written: the session's safety system withheld the file.
+- Not done, on purpose or otherwise: no eyetest (VR-242, it needs the lane), no Reset #2
+  measurement, no merge.
 
 ### 2026-09-25 - M1 session 1: the route, the floor, the canaries, the extractor (VR-231, VR-239, VR-232, VR-236)
 

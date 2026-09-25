@@ -4,65 +4,84 @@ Session handoff, newest first. Every session rewrites "Where things are RIGHT NO
 steps" and prepends a dated block. A session that ends without pushing this file is a failed
 handoff.
 
-## Where things are RIGHT NOW (2026-09-25, M1 session 3 start)
+## Where things are RIGHT NOW (2026-09-25, M1 session 3 end)
 
-- **PR #3 is merged into `staging`** (3b5f878): the runtime layer, the mono screen, the carry,
-  the R2 research. VR-241, VR-240 and VR-243 are Done.
-- **The mono screen is accepted in the headset** (VR-243, build 01eed75, VDXR): one stable
-  head-locked screen in both eyes with the installed geometry (2.4 m wide at 1.75 m,
-  head-locked). ROADMAP S1 box 1 is ticked; M1's headset criterion is met.
-- **The capture A/B is measured, not yet decided**: deferred 3.4-3.8 ms per present, shared
-  11-13 us with the tick rate rising to the display's 90 Hz. `[Capture] Mode=deferred` still
-  ships; the flip to `shared` waits for the headset A/B (the one question of the next run).
-- **R2's offline half is done** (`docs/darkness2/swig-api.md`, ENGINE_NOTES s3, every Lua
-  address in `patterns.h`); **the in-game half (the lane module) is this session's work**
-  (VR-233), then a first F10 panel (Ref VR-275) and the camera eyetest (VR-242).
-- R0 count: 4 of 10 launches with the banner. The game is not running.
+- **The Lua lane runs chunks inside the game's VM** (VR-233, the in-game half): three
+  byte-verified prologue wraps (`ScriptSystem::Resume`, `lua_resume`, `lua_pcall`) installed
+  from the first present, default OFF (`[Lua] Enabled`), re-read every LogEverySeconds. The
+  safe call point is the entry of `ScriptSystem::Resume` on the game thread, which IS the
+  present thread; the main state's `l_G` matched on 110,664 resumes with 0 mismatches; the
+  `lua_pcall` control is flat in play (the engine uses it at transitions only, from one call
+  site); `lua fov 110` ran at the next Resume with 0 deferrals and read back through
+  `GetBaseFovOverride`; `lua swigcheck` 10 of 10. The R2 verdict is ENGINE_NOTES s3.
+- **The rendered FOV is a number** (VR-242): the projection watch reads `WorldViewProjection`
+  back at every upload (device slots 91/92/94, the CTAB parsed by name, P00/P11 recovered
+  from the column norms of a rigid W*V*P) and votes per present. The alley is V = 45.00 deg,
+  H = 72.73, 16:9. **`SetBaseFovOverride` through the lane is HONOURED as a vertical angle**
+  (60 -> 60.00, 80 -> 80.00, 0 -> 45.00, exact), lerped by the engine over about two seconds.
+  The negative control (`camera eyetest nowrite`) prints DISCARDED on both asks. The
+  instrument's own HONOURED line is still open: its fixed settle judged the lerp; the settle
+  is adaptive in build 2F98D983, which is built but NOT installed (the game was running).
+  `camera ctab <deg>` is the direct lever (92,720 constants rewritten, the shot wider).
+  ENGINE_NOTES s12.
+- **The F10 panel shows in both eyes** (Ref VR-275, the simple form): one ImGui window in the
+  eye texture (DX11 backend only, D3DCompile forwarded, no new import), F10 or `overlay on`,
+  hidden by default; the stereo method, the capture mode with its cost, the screen geometry,
+  the Lua lane, the canaries and the OpenXR line. `panel.xrs` passes (non-black and luma rise
+  equally in both eyes and fall back on close); the eye capture shows every section.
+- **The game is running on VDXR** (launch 8, build 893D63DD installed, no headset connected
+  at the time, retrying quietly) in the alley with the lane and the watch ON, for the headset
+  A/B below. If it is closed: `.\tools\install.ps1 -Release -Set 'Canary.Tick=1','Canary.LogEverySeconds=5','Lua.Enabled=1'`
+  (this also installs 2F98D983), `.\tools\launch-game.ps1 -WaitBanner`, `.\tools\boot.ps1`.
+- **Branch and PR**: `claude/vr-233-lua-lane-ingame`, PR #4 against `staging` with `Fixes
+  VR-233`, `Ref VR-275`, `Ref VR-242`. Not merged; the merge is the user's. VR-233 is In Review
+  with the PR attached; VR-242 In Progress (its instrument line is open); VR-275 widened by a
+  comment. R0 count: 8 of 10 launches with the banner (2 + 2 + 4 this session).
 
 ## Next steps (in order)
 
-1. **VR-243, the headset judgement** on the running VDXR game (or relaunch): the one question
-   is in the session log below. `screen headlock on|off` and `screen <dist> <width>` are the
-   live levers; `capture mode shared` is the cost A/B.
-2. **VR-233, the in-game half of the Lua lane**: the three prologue wraps from `patterns.h`
-   (`kScriptResumeFn` as the live entry, `kLuaResume` as the state cross-check, `kLuaPCall`
-   as the 0-count control), installed from the present tick, default OFF, with the canary
-   re-read; `lua run`/`lua fov` running one chunk on the main state at `ScriptSystem::Resume`
-   entry when `ci == base_ci` and `nCcalls == 0`; the FOV chunk from the shipped SetFov.lua's
-   object path (no `Sleep`); proof by two shots and, with VR-242, the projection constant.
-3. **VR-242, the camera eyetest**: `CreateVertexShader` (slot 91) CTAB reflection for
-   `SS_Projection`, `SetVertexShaderConstantF` (slot 94) readback of the projection, the
-   HONOURED/DISCARDED verdict per candidate; supplies VR-233's numeric proof.
-4. **The Reset path measured**: an in-game resolution change (the 9Ex device did not Reset on
-   alt-tab); expect `Reset #2` -> `stereo: on_reset` -> a new swapchain pair.
-5. **The shipping capture default**: flip to `shared` if the headset run shows no tearing or
-   lag at `SharedWait=0`; measure `SharedWait=1`.
-6. R3 (VR-234), R6 (VR-237) as before.
+1. **The headset A/B (the one question)** on the running VDXR game: A = `capture mode
+   deferred` (as shipped), B = `capture mode shared` (the panel's capture radio or the seam).
+   Is B free of tearing, lag or a stale frame when the head turns? If yes, flip `[Capture]
+   Mode=shared` in the ini literal and the golden in the next PR.
+2. **VR-242, close the instrument**: install 2F98D983, `camera eyetest all` in the alley
+   standing still; expect HONOURED as `vert` on both asks with the settle length logged (the
+   engine's FOV smoothing time), then tick the S0.5 box and move the ticket to In Review.
+3. **The Reset path**: an in-game resolution change through the options menu with the input
+   lane (a 9Ex fullscreen device does not Reset on alt-tab); expect `Reset #2` ->
+   `stereo: on_reset` -> a new swapchain pair. Not done this session (no launch left for it).
+4. **S1 head tracking on the mono screen** (VR-244): the FOV lever is the lane's
+   `SetBaseFovOverride` (vertical degrees) with the watch as its sensor; rotation goes on the
+   engine tick, not through Lua (ARCHITECTURE "The camera seam").
+5. R3 (VR-234) `-console` and `Cmd*` dispatch: the lane can now call by name, so the console
+   question may be answered from Lua first.
+6. R6 (VR-237), the runtime half; the tiered panel (VR-275) when the controller input exists.
 
 ## Found and not fixed
 
-- **The Lua lane module** (the wraps and the chunk runner) is unwritten: the session's safety
-  system withheld the file. The research, the addresses and the SWIG map are in. Next session
-  writes it from the design in ARCHITECTURE "The Lua lane" and the s3 census.
-- **One `GetRenderTargetData failed (0x8876086c)`** from the capture's bbox sampler at the
-  instant of the deferred -> shared switch; the next samples were fine. Not ticketed (the
-  issue limit); listed here and in the PR.
-- **After `stereo::shutdown()` on `quit`, the mono method re-created its texture** on the next
-  present (`mono: output texture` after `xr: shutdown`). Harmless before WM_CLOSE lands; the
-  seam should park the method after a teardown.
-- **`stereo status` prints `selected aer`** after a refused `stereo aer`: the wanted name
-  follows the refused choice (Dishonored's behaviour); the active method is right.
-- **`boot.ps1` declares gameplay "not reached"** in the alley: its luma threshold (80) is
-  above this dark game's gameplay (18-21). The picture was gameplay. A gameplay detector that
-  is not a luma threshold is still the S5 item.
-- **The `mark` seam word** takes `mark <text>`; a `mark:` with a colon is an unknown command.
-  Cosmetic; the harness scripts use the right form.
-- The `read-dump.py` PEB warning, the missing `linear` GitHub App: unchanged.
+- **The eyetest instrument judged a lerp** (a fixed 30-present settle; the engine smooths a
+  base-FOV change over about two seconds). Fixed in the tree (adaptive settle, the timeline
+  log), unmeasured: the HONOURED line is next launch's. Ticket VR-242 stays open for it.
+- **The projection watch's change line printed only the first step of a lerp** (it compared
+  against the previous present, not the last logged value). Fixed in 2F98D983, unmeasured.
+- **The log banner's "built" time is the proxy translation unit's compile time**, two builds
+  stale when only new files change; the sha256 the install prints is the identity (TRAPS s12).
+- **`boot.ps1` still calls the alley "not reached"** (luma 18-23 against its 80 threshold);
+  the picture is gameplay every time. The gameplay detector that is not a luma threshold is
+  still the S5 item.
+- **The panel's mouse is the desktop cursor and the game keeps reading it** while the panel is
+  open (the view can spin while pointing). The controller pointer is VR-275's work; the seam
+  words drive every control the panel shows.
+- **The `ctab` lever is judged by the picture only**: the watch reads the upload before the
+  substitution by design. A second sensor (a readback of the substituted constant, or the
+  capture bbox) would make it a number. Not filed (the issue limit); noted on VR-242.
+- **`stereo status` after a refused choice**, the `mono` texture after `quit`, the bbox
+  sampler's one failed `GetRenderTargetData`, the PEB warning, the missing GitHub App: as
+  before.
 
 ## Blockers
 
-None for VR-243 (the headset run) or VR-242. VR-233's in-game half needs the lane module
-written; nothing else is missing for it.
+None. The headset A/B needs the user in the headset; everything else runs on the simulator.
 
 **Note on the board (2026-09-25):** the Linear workspace hit its free issue limit after
 VR-281. A session that needs a new ticket should first look for an existing ticket to widen,
@@ -81,6 +100,41 @@ tell the user.
 ---
 
 ## Session log
+
+### 2026-09-25 - M1 session 3: the Lua lane in-game, the first F10 panel, the projection watch and the FOV verdict (VR-233, VR-275, VR-242)
+
+- Started from `origin/staging` 3b5f878 (PR #3 merged); ticked S1 box 1 with the VR-243
+  verdict (the mono screen accepted in the headset, build 01eed75).
+- Built the Lua lane as designed: the three wraps, the mailbox, the chunk runner on the main
+  state, the FOV chunk from the shipped script's object path (read locally with the R5
+  extractor, never committed), `lua status|on|off|run|fov|swigcheck`, the status.json object.
+  Launch 5 (simulator): live from the first present, the game thread is the present thread,
+  l_G matched on every resume, the control flat in play (48 engine pcalls at transitions from
+  one site, 0xBBA876), `lua fov 110` ran with 0 deferrals and the shot is visibly wider, 10 of
+  10 SWIG modules verified. The R2 verdict is written (ENGINE_NOTES s3, the ROADMAP box).
+- Built the simple F10 panel with ImGui's DX11 backend alone and a `D3DCompile` forwarder
+  (the import list stays the exe's; `exports-check.ps1` asserts it), `IM_ASSERT` to the log,
+  `overlay on|off|toggle|status`, F10 on the present thread, the game section (the lane and
+  the canaries). Launch 6: the panel drawn into the 2560x1440 eye texture, visible in the sim's
+  left-eye capture with every section; the first assertion (non-black past 30) was wrong for
+  a dark window; `@capchange` added to `xrsim-run.ps1`; launch 7: `panel.xrs` passes.
+- Built the projection watch (slots 91/92/94, the CTAB parse) and the eyetest. Launch 6: 0 of
+  81 shaders name `SS_Projection`; a checkpoint reload creates no shaders. Launch 7 (the lazy
+  `GetFunction` read, `camera names on`): the shaders take `WorldViewProjection` at c0 and
+  never a pure projection; the FOV is recovered from the column norms of a rigid W*V*P (the
+  Dishonored method). Launch 8 (VDXR, flat): V = 45.00 in the alley; `SetBaseFovOverride`
+  HONOURED as a vertical angle (60.00, 80.00, back to 45.00, exact); the engine lerps over
+  about two seconds, which the instrument's fixed settle misjudged (MOVED-UNPREDICTED, then
+  INVALID); the negative control DISCARDED on both asks; `camera ctab 90` rewrote 92,720
+  constants with a wider shot. The settle is adaptive and the timeline log fixed in 2F98D983
+  (built, not installed: the game runs for the headset A/B).
+- Docs: ENGINE_NOTES s3 (the R2 verdict), s8 (the SWIG module table, the read-back wrapper,
+  the live pcall caller), s12 (the constant inventory, the decomposition, the FOV table);
+  ARCHITECTURE decisions (the pcall control by return address and the returned result; the
+  DX11-only panel and the forwarder); TRAPS s12 (the banner time); VERIFICATION rows for
+  `lua`, `camera`, `overlay`.
+- Not done, on purpose or otherwise: the instrument's own HONOURED line (next launch), Reset
+  #2 (no launch left), the capture default flip (after the headset A/B), no merge.
 
 ### 2026-09-25 - M1 session 2: the runtime layer, the mono screen, the R2 research (VR-241, VR-240, VR-233)
 

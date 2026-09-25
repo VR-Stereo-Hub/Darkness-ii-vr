@@ -10,6 +10,7 @@
 #include "core/framework/frame_hooks.h"
 #include "core/framework/status.h"
 #include "core/hooks/vtable.h"
+#include "core/util/clock.h"
 #include "core/util/log.h"
 
 namespace d2vr::vsconst {
@@ -53,6 +54,7 @@ uint32_t g_uploadsThisPresent = 0, g_perspThisPresent = 0;
 Projection g_latest[2];
 volatile LONG g_latestIdx = 0;
 float g_lastLoggedV = -1.0f;
+double g_lastLogMs = 0.0;
 volatile LONG g_uploadsTotal = 0, g_perspTotal = 0;
 
 // The substitution lever.
@@ -451,17 +453,21 @@ void present_tick(uint32_t present)
     const LONG next = g_latestIdx ^ 1;
     g_latest[next] = p;
     InterlockedExchange(&g_latestIdx, next);
-    if (p.valid && fabsf(p.fovVdeg - g_lastLoggedV) > 0.05f) {
+    // Log a change against the value LAST LOGGED, at most twice a second: a lerp
+    // that moves 0.01 deg per present must still produce its timeline (launch 8:
+    // comparing against the previous present hid every line but the first).
+    const double now = d2vr::clock::now_ms();
+    if (p.valid && fabsf(p.fovVdeg - g_lastLoggedV) > 0.05f && now - g_lastLogMs >= 500.0) {
         char pairs[160] = "";
         for (int i = 0; i < g_pairCount && i < 4; i++) {
             char t[40];
             snprintf(t, sizeof(t), "%s[%.4f %.4f x%u]", i ? " " : "", g_pairs[i].m00, g_pairs[i].m11, g_pairs[i].votes);
             strncat(pairs, t, sizeof(pairs) - strlen(pairs) - 1);
         }
-        D2VR_LOG_EVERY_MS(D2VR_CAT, ::d2vr::log::Level::Info, 500,
-            "vsconst: projection V=%.2f H=%.2f deg aspect=%.4f (p00 %.5f p11 %.5f, %u of %u perspective uploads, %u total, %u distinct: %s) at present %u",
-            p.fovVdeg, p.fovHdeg, p.aspect, p.p00, p.p11, p.votes, p.perspUploads, p.allUploads, p.distinct, pairs, present);
+        D2VR_INFO("vsconst: projection V=%.2f H=%.2f deg aspect=%.4f (p00 %.5f p11 %.5f, %u of %u perspective uploads, %u total, %u distinct: %s) at present %u",
+                  p.fovVdeg, p.fovHdeg, p.aspect, p.p00, p.p11, p.votes, p.perspUploads, p.allUploads, p.distinct, pairs, present);
         g_lastLoggedV = p.fovVdeg;
+        g_lastLogMs = now;
     }
     g_pairCount = 0; g_uploadsThisPresent = 0; g_perspThisPresent = 0;
 }

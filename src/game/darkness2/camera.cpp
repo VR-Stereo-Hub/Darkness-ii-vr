@@ -17,7 +17,14 @@ namespace {
 
 constexpr float kPi = 3.14159265f;
 constexpr int kBaselineFrames = 45;
-constexpr int kSettleFrames = 30;
+// The settle is ADAPTIVE (launch 8, 2026-09-25: the engine lerps a base-FOV change over
+// about two seconds, so a fixed 30-present settle judged a moving value): the settle
+// ends when the last kStillWindow presents' V spread is under kStillBand, and its
+// length is logged as the engine's smoothing time. kSettleCap bounds it.
+constexpr int kSettleMin = 30;
+constexpr int kSettleCap = 600;
+constexpr int kStillWindow = 20;
+constexpr float kStillBand = 0.05f;
 constexpr int kJudgeFrames = 120;
 constexpr int kRevertFrames = 60;
 constexpr int kWriteWaitCap = 600;
@@ -49,6 +56,10 @@ struct Eyetest {
     uint32_t chunksBefore = 0;
     int   waited = 0;
     char  chunkResult[160] = "";
+    // the adaptive settle: a ring of the last presents' V
+    float ring[kStillWindow] = {};
+    int   ringN = 0, ringAt = 0;
+    int   settleUsed = 0;
     // revert
     int   revOk = 0, revN = 0;
     // results
@@ -62,6 +73,34 @@ void enter(Phase p)
 {
     g_et.phase = p;
     g_et.frames = 0;
+    g_et.ringN = 0; g_et.ringAt = 0;
+}
+
+// True once the last kStillWindow valid presents lie within kStillBand of each other.
+bool still(const d2vr::vsconst::Projection& p)
+{
+    Eyetest& e = g_et;
+    if (!p.valid) return false;
+    e.ring[e.ringAt] = p.fovVdeg; e.ringAt = (e.ringAt + 1) % kStillWindow; if (e.ringN < kStillWindow) e.ringN++;
+    if (e.ringN < kStillWindow) return false;
+    float lo = e.ring[0], hi = e.ring[0];
+    for (int i = 1; i < kStillWindow; i++) { if (e.ring[i] < lo) lo = e.ring[i]; if (e.ring[i] > hi) hi = e.ring[i]; }
+    return hi - lo < kStillBand;
+}
+
+// The settle phases: at least kSettleMin presents, then until still, capped.
+bool settle_done(const d2vr::vsconst::Projection& p, const char* what)
+{
+    Eyetest& e = g_et;
+    const bool isStill = still(p);
+    if (e.frames < kSettleMin) return false;
+    if (isStill || e.frames >= kSettleCap) {
+        e.settleUsed = e.frames;
+        D2VR_INFO("camera/eyetest: %s settled after %d presents (%s; V now %.2f) - the engine's smoothing time for this write",
+                  what, e.frames, isStill ? "still" : "CAP reached, still moving", p.fovVdeg);
+        return true;
+    }
+    return false;
 }
 
 void predict(float ask)
@@ -76,9 +115,9 @@ void predict(float ask)
     }
     g_et.movedThr = 3.0f * g_et.sigma > 0.25f ? 3.0f * g_et.sigma : 0.25f;
     D2VR_INFO("camera/eyetest: ask %d = SetBaseFovOverride(%.1f): baseline V=%.2f (sigma %.3f, aspect %.4f) -> predictions vert %.2f | horiz %.2f | h169 %.2f "
-              "(bands %.2f/%.2f/%.2f deg, moved > %.2f deg); %d presents judged after the chunk RAN and %d settle presents",
+              "(bands %.2f/%.2f/%.2f deg, moved > %.2f deg); %d presents judged after the chunk RAN and V is still (%d..%d settle presents)",
               g_et.askIdx + 1, ask, g_et.Vb, g_et.sigma, g_et.aspectB, g_et.Vp[0], g_et.Vp[1], g_et.Vp[2],
-              g_et.band[0], g_et.band[1], g_et.band[2], g_et.movedThr, kJudgeFrames, kSettleFrames);
+              g_et.band[0], g_et.band[1], g_et.band[2], g_et.movedThr, kJudgeFrames, kSettleMin, kSettleCap);
 }
 
 void set_verdict(int hyp, const char* fmt, ...)
@@ -144,7 +183,7 @@ bool wait_chunk(Phase onFail)
             enter(onFail);
             return false;
         }
-        D2VR_INFO("camera/eyetest: the chunk RAN -> %s; settling %d presents", g_et.chunkResult, kSettleFrames);
+        D2VR_INFO("camera/eyetest: the chunk RAN -> %s; settling until V is still (%d..%d presents)", g_et.chunkResult, kSettleMin, kSettleCap);
         return true;
     }
     if (++g_et.waited >= kWriteWaitCap) {
@@ -211,7 +250,7 @@ void step(const d2vr::vsconst::Projection& p)
         if (wait_chunk(RevertWrite)) enter(Settle);
         return;
     case Settle:
-        if (e.frames >= kSettleFrames) enter(Judge);
+        if (settle_done(p, "the write")) enter(Judge);
         return;
     case Judge:
         if (p.valid) {
@@ -231,7 +270,7 @@ void step(const d2vr::vsconst::Projection& p)
         if (wait_chunk(RevertSettle)) enter(RevertSettle);
         return;
     case RevertSettle:
-        if (e.frames >= kSettleFrames) enter(RevertJudge);
+        if (settle_done(p, "the revert")) enter(RevertJudge);
         return;
     case RevertJudge:
         if (p.valid) { e.revN++; if (fabsf(p.fovVdeg - e.Vb) <= 0.25f) e.revOk++; }
@@ -265,8 +304,8 @@ bool start(bool nowrite, float askA, float askB)
     g_et.startPresent = (uint32_t)d2vr::frame::presents();
     enter(Baseline);
     D2VR_INFO("camera/eyetest: START candidate lua%s: asks %.1f and %.1f; per ask %d baseline presents (INVALID unless sigma < 0.1 and the mode is present in 90%%), "
-              "the write, %d settle, %d judged (HONOURED = >= 96 in exactly one hypothesis's band; DISCARDED = >= 96 unmoved), the revert judged over %d",
-              nowrite ? " [nowrite]" : "", askA, askB, kBaselineFrames, kSettleFrames, kJudgeFrames, kRevertFrames);
+              "the write, a settle until V is still (%d..%d), %d judged (HONOURED = >= 96 in exactly one hypothesis's band; DISCARDED = >= 96 unmoved), the revert settled the same way then judged over %d",
+              nowrite ? " [nowrite]" : "", askA, askB, kBaselineFrames, kSettleMin, kSettleCap, kJudgeFrames, kRevertFrames);
     return true;
 }
 

@@ -525,3 +525,49 @@ the simulator (launch 3 of the R0 count; log build 31de821-dirty):
 9Ex device is what the shared capture shares: `[Device] Ex` here means "the shared path is
 permitted", never "create as Ex" (ARCHITECTURE decision log). The 64-bit VDXR compatibility
 layer is opted out per process on every launch; its log line is expected.
+
+## 12. The vertex-shader constants and the rendered FOV (VR-242, 2026-09-25)
+
+Measured with the projection watch (`core/framework/vs_const`: device vtable slots 91/92/94,
+the CTAB parse at `CreateVertexShader`, a lazy `GetFunction` read of the live shader at
+`SetVertexShader` when `camera names on`) on launches 6 and 7 (simulator, builds 226DDEDA and
+893D63DD); the alley in gameplay.
+
+- **82 vertex shaders** exist by the time the save has loaded; every one carries a CTAB
+  (0 without), naming between 0 and 11 constants. A checkpoint reload creates no new shader
+  objects (the engine keeps them).
+- **There is no pure projection constant.** The names are the engine's own identifiers:
+  `WorldViewProjection` (c0, 4 registers) in every scene shader, `World` (c4, 4), `PrevWorldProj`
+  (c4, 4, the velocity pass), `ShadowMapProjection` (c0, 4), `ShadowMapTextureProjection0`
+  (c5, 4), `ScreenTextureProjection` (c4 or c20, 4), `ProjectorTextureProjection0` (c21, 4),
+  `BoneMatrices` (c45, 204 registers = 68 bones x 3) and `BoneVelocities` (c17, 204),
+  `Instance` / `LitInstance` (c0, 7-16), `CameraPosition` (c25), `CameraRightUp` (c23, 2),
+  `CameraLineOfSight` (c26), `StereoDepth` (c4), `VertexColorGamma` (c8), the post-process
+  and fade parameters (`g_avSampleOffsets`, `FadeParams`, `_FadeInOut`, `NoiseAmount`, ...).
+  The `ShaderRegister::SS_Projection` string in the exe (s2) is the engine's enum, not a
+  CTAB name: the engine composes W*V*P on the CPU and uploads the product.
+- **So the rendered FOV is recovered from `WorldViewProjection`**: with a rigid world and
+  view, P00 and P11 are the top-3 norms of its first two columns and its fourth column has
+  unit length (the three mutually orthogonal), which is also the test that rejects scaled
+  objects and orthographic passes; the same holds on rows for the transposed packing. The
+  watch votes (P00, P11) per present and takes the mode, so shadow and viewmodel passes with
+  their own projection show up as distinct pairs on the line, not as noise. Copied from the
+  Dishonored mod as a METHOD (its view-projection helpers recover P00/P11 the same way).
+- `IDirect3DStateBlock9::Apply` bypasses slot 94; not seen in play.
+
+**The rendered FOV and the eyetest verdict (launch 8, VDXR, build 893D63DD, the alley):**
+
+| Measurement | Result |
+|---|---|
+| The alley's projection | V = 45.00 deg, H = 72.73, aspect 1.7778 (p11 = 2.41421 = 1/tan(22.5 deg)); 38 of 38 perspective uploads per present agree (one distinct pair); the uploads come from the present thread |
+| `SetBaseFovOverride(60)` through the Lua lane, read 7 s later | V = 60.00, H = 91.49 |
+| `SetBaseFovOverride(80)` | V = 80.00, H = 112.33 |
+| `SetBaseFovOverride(0)` (the reset) | V = 45.00, H = 72.73 again |
+| **Verdict** | **HONOURED as a VERTICAL angle**, exact to 0.01 deg at the settled value; the engine lerps the change over about two seconds (the eyetest's 120 judged presents after a 30-present settle saw 52.96 to 59.97 on the way to 60). The shipped default of 45 is the vertical FOV |
+| The negative control (`camera eyetest nowrite`) | DISCARDED on both asks: V stayed at 45.00 in 120/120 presents, reverts 60/60 |
+| The instrument's own verdict on this launch | MOVED-UNPREDICTED on ask 1 (83/120 in the `vert` band, still lerping) and INVALID on ask 2 (the revert still lerping at the next baseline): a fixed settle judged a moving value. The settle is adaptive from build 2F98D983 (waits for V to be still over 20 presents, logs the settle length, and the watch now logs the lerp's timeline); its HONOURED line is a next-launch measurement |
+| `camera ctab 90` (the direct lever) | 92,720 constants rewritten in five seconds, the shot visibly wider; judged by the picture (the watch reads the pre-substitution upload) |
+
+What this settles for the camera seam: the FOV lever is the Lua lane's `SetBaseFovOverride`,
+a vertical angle in degrees, and the projection watch is its sensor; S1 sets it from the
+headset's projection and the watch confirms the rendered value.

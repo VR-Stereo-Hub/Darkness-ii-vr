@@ -79,7 +79,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   in turn and reports which one changes the uploaded projection.
 - **Done when**:
   - [x] Both simulator eyes receive frames at the game's frame rate for 5 minutes (2026-09-25, VR-241: `xrsim-soak.ps1`, 24,425 presents = 24,425 submits, 24,404 layered by the sim, FOCUSED; ENGINE_NOTES s11)
-  - [ ] `camera eyetest` prints exactly one HONOURED write with the measured FOV delta
+  - [ ] `camera eyetest` prints exactly one HONOURED write with the measured FOV delta (2026-09-25, VR-242: the write IS found and measured by hand, `SetBaseFovOverride` HONOURED as a vertical angle, 45.00 -> 60.00 -> 80.00 -> 45.00 read from the projection; the negative control prints DISCARDED; the instrument's own HONOURED line waits for its adaptive settle on the next launch, ENGINE_NOTES s12)
   - [x] The device path verdict (Ex vs non-Ex, present call and thread) is in ENGINE_NOTES (2026-09-25, s2: `Direct3DCreate9Ex`, `CreateDeviceEx`, `PresentEx` from the main thread)
 
 ## S1 - Mono screen in a headset; head tracking; positional; render size (M1 / M2)

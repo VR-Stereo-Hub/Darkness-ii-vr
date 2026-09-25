@@ -46,6 +46,36 @@ add_library(d2vr_proxy SHARED
     core/framework/frame_hooks.cpp core/framework/frame_hooks.h
     core/framework/shot.cpp        core/framework/shot.h
     core/input/inject.cpp          core/input/inject.h
+    # The runtime layer, adopted verbatim from the Dishonored VR mod behind two
+    # host seams (docs/ARCHITECTURE.md "The runtime layer"): fixes port between
+    # the projects with the mechanical rename recorded there and nothing else.
+    core/vr/openxr_runtime.cpp     core/vr/openxr_runtime.h
+    core/vr/openxr_input.cpp       core/vr/openxr_input.h
+    core/vr/input_snapshot.h
+    core/vr/mono_anchor.h
+    core/vr/aim_visual.h
+    core/vr/hud_stub.cpp           core/vr/hud_stub.h
+    core/vr/hud_anchor.h
+    core/vr/image_orientation.h
+    core/vr/pose_record.cpp        core/vr/pose_record.h
+    core/vr/apilayer_guard.cpp     core/vr/apilayer_guard.h
+    core/util/xr_math.h
+    core/framework/bridge_profile.cpp core/framework/bridge_profile.h core/framework/bridge_profile_policy.h
+    core/framework/diagnostic_ab.cpp  core/framework/diagnostic_ab.h  core/framework/fresh_pair.h
+    # Dishonored headers kept verbatim so the adopted sources compile against
+    # their real signatures; the bodies this mod does not have are stubs.
+    core/framework/perf.h          core/framework/perf_stub.cpp
+    core/gfx/frame_id.h            core/gfx/frame_id_stub.cpp
+    core/gfx/d3d9ex.h              core/gfx/d3d9ex_host.h  core/gfx/d3d9ex_stub.cpp
+    core/ui/ovl_ui.h               core/ui/ovl_ui_stub.cpp
+    # The stereo seam, the mono method, the D3D9-to-D3D11 carry, the mod's D3D11 device.
+    core/gfx/stereo.cpp            core/gfx/stereo.h
+    core/gfx/mono_screen.cpp
+    core/gfx/aer.cpp
+    core/gfx/reentry_stub.cpp
+    core/gfx/blit_quad.cpp         core/gfx/blit_quad.h
+    core/gfx/capture.cpp           core/gfx/capture.h
+    core/gfx/d3d11_device.cpp      core/gfx/d3d11_device.h
     game/darkness2/game.h
     game/darkness2/patterns.h
     game/darkness2/build_fingerprint.cpp
@@ -55,12 +85,25 @@ add_library(d2vr_proxy SHARED
 set_target_properties(d2vr_proxy PROPERTIES OUTPUT_NAME "d3d9" PREFIX "")
 add_dependencies(d2vr_proxy d2vr_version)
 target_include_directories(d2vr_proxy PRIVATE . "${PROJECT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/generated")
-# Only kernel32/user32 are static imports: the proxy must add no import that
-# changes the game's DLL load order. d3d9 itself is LoadLibrary'd (the backend),
-# dbghelp is LoadLibrary'd at crash::install.
-target_link_libraries(d2vr_proxy PRIVATE user32)
+# The proxy must add no static import that changes the game's DLL load order.
+# kernel32, user32, advapi32 and shell32 are all static imports of DarknessII.exe
+# itself (ENGINE_NOTES s1), so they are already loaded when d3d9 is asked for:
+# advapi32 is the runtime layer's and the static loader's registry read of the
+# ActiveRuntime key, shell32 the layer's SHGetFolderPathW. d3d9 itself, d3d11,
+# dxgi and d3dcompiler are LoadLibrary'd; dbghelp is LoadLibrary'd at
+# crash::install. tools\exports-check.ps1 asserts the import list against
+# tests/golden/d3d9-imports.txt.
+target_link_libraries(d2vr_proxy PRIVATE user32 advapi32 shell32 imgui)
 target_compile_options(d2vr_proxy PRIVATE /W3 /permissive-)
 target_compile_definitions(d2vr_proxy PRIVATE D2VR_BUILD_CONFIG="$<CONFIG>")
+# The OpenXR loader is linked statically (no openxr_loader.dll ships). The
+# adopted layer's `#else` block for a no-OpenXR build is incomplete upstream and
+# is never compiled here: D2VR_WITH_OPENXR is 1 whenever the proxy builds.
+if(NOT D2VR_WITH_OPENXR)
+    message(FATAL_ERROR "d3d9.dll needs the OpenXR loader: configure with D2VR_WITH_OPENXR=ON")
+endif()
+target_link_libraries(d2vr_proxy PRIVATE openxr_loader)
+target_compile_definitions(d2vr_proxy PRIVATE D2VR_WITH_OPENXR=1)
 if(D2VR_WITH_LEGACY)
     target_compile_definitions(d2vr_proxy PRIVATE D2VR_WITH_LEGACY=1)
 else()

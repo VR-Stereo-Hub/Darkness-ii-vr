@@ -1,0 +1,144 @@
+// core/gfx/mono_screen.cpp - rung 1 of the stereo ladder: the mono screen.
+//
+// The game's frame, captured off the D3D9 backbuffer, blitted into one
+// R8G8B8A8 texture at the window size with the F10 overlay drawn on top, and
+// handed to the runtime layer with eyeSign 0: the runtime shows it on a
+// head-locked quad ([Screen] DistanceMeters / WidthMeters), the same image in
+// both eyes. No depth, no head-driven render - the camera is the game's own,
+// turned by the head-tracking write on the script lane as always.
+//
+// This is the rung that proves the path: capture -> D3D11 -> swapchain ->
+// compositor -> both eyes, with head tracking and the gamepad on top. Every
+// higher rung reuses the capture and the blit; only the tag and the camera
+// change.
+#define D2VR_CAT ::d2vr::log::Cat::present
+#include "core/gfx/stereo.h"
+
+#include "core/framework/status.h"
+#include "core/gfx/blit_quad.h"
+#include "core/framework/bridge_profile.h"
+#include "core/gfx/capture.h"
+#include "core/util/log.h"
+
+#include <windows.h>
+#include <d3d11.h>
+
+namespace d2vr::stereo {
+namespace {
+
+class MonoScreen : public IStereo {
+public:
+    const char* name() const override { return "mono"; }
+    bool implemented() const override { return true; }
+
+    void begin_frame(const FrameInput& in) override { frame_ = in.frame; }
+    int eye_for_next_frame() const override { return 0; }
+
+    bool end_frame(const FrameDevices& d, FrameOutput& out) override {
+        if (!d.dev9 || !d.dev11 || !d.ctx11) {
+            D2VR_LOG_ONCE(D2VR_CAT, ::d2vr::log::Level::Warn,
+                         "mono: no D3D11 device - the game runs flat, nothing reaches the headset");
+            return false;
+        }
+        if (!blit_.init(d.dev11)) return false;
+        const bool fresh = d2vr::capture::grab(d.dev9, d.dev11, d.ctx11);
+        ID3D11ShaderResourceView* src = d2vr::capture::srv();
+        if (!src) return false;
+        const uint32_t w = d2vr::capture::width(), h = d2vr::capture::height();
+        if (!ensure_target(d.dev11, w, h)) return false;
+        if (fresh || !drawnOnce_) {
+            {
+                d2vr::bridge_profile::Scope sample(d.dev11,d.ctx11,d2vr::bridge_profile::Conversion,
+                    fresh ? d2vr::capture::delivered_tag() : 0);
+                blit_.draw(d.ctx11, src, rtv_, w, h);
+            }
+            d2vr::capture::read_done(d.ctx11);   // shared: the slot may be blitted into again only after this read
+            // 41.2 (VR-31): the hand pass is CALLED here and expected to
+            // refuse - this rung's output is a head-locked quad and eye-frustum
+            // hands have no world to sit in. Calling it anyway is deliberate:
+            // the refusal names the rung on the log, where a silent skip would
+            // look identical to the hands being broken.
+            if (HandDrawFn hd = hand_draw())
+                hd(d.dev11, d.ctx11, rtv_, w, h, 0);
+            if (OverlayDrawFn ov = overlay_draw()) ov(d.ctx11, rtv_, w, h);
+            drawnOnce_ = true;
+            ++frames_;
+        } else {
+            ++stale_;   // the last good frame goes out again
+        }
+        out.tex = tex_;
+        out.eyeSign = 0;
+        out.w = w; out.h = h;
+        return true;
+    }
+
+    void on_reset() override { d2vr::capture::on_reset(); }
+
+    void shutdown() override {
+        release_target();
+        blit_.shutdown();
+        drawnOnce_ = false;
+    }
+
+    void status(d2vr::status::Writer& w) override {
+        w.kv("monoFrames", (unsigned long)frames_);
+        w.kv("monoStale", (unsigned long)stale_);
+        const d2vr::capture::Bbox b = d2vr::capture::bbox();
+        w.obj("bbox");
+        w.kv("valid", b.valid);
+        w.kv("x0", (int)b.x0); w.kv("y0", (int)b.y0); w.kv("x1", (int)b.x1); w.kv("y1", (int)b.y1);
+        w.kv("pctW", (double)b.pctW); w.kv("pctH", (double)b.pctH);
+        w.kv("nonBlackPct", (double)b.nonBlackPct);
+        w.end_obj();
+        const d2vr::capture::Cost c = d2vr::capture::cost();
+        w.obj("captureCost");
+        w.kv("rtdUs", (int)c.rtdUs); w.kv("lockUs", (int)c.lockUs); w.kv("copyUs", (int)c.copyUs);
+        w.kv("uploadUs", (int)c.uploadUs); w.kv("blitUs", (int)c.blitUs); w.kv("totalUs", (int)c.totalUs);
+        w.kv("grabs", (int)c.grabsInWindow);
+        w.end_obj();
+    }
+
+private:
+    bool ensure_target(ID3D11Device* dev, uint32_t w, uint32_t h) {
+        if (tex_ && w_ == w && h_ == h) return true;
+        release_target();
+        D3D11_TEXTURE2D_DESC td = {};
+        td.Width = w; td.Height = h;
+        td.MipLevels = 1; td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;   // the runtime swapchain's family
+        td.SampleDesc.Count = 1;
+        td.Usage = D3D11_USAGE_DEFAULT;
+        td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        if (FAILED(dev->CreateTexture2D(&td, nullptr, &tex_)) ||
+            FAILED(dev->CreateRenderTargetView(tex_, nullptr, &rtv_))) {
+            D2VR_ERROR("mono: output texture %ux%u failed", w, h);
+            release_target();
+            return false;
+        }
+        w_ = w; h_ = h;
+        drawnOnce_ = false;
+        D2VR_INFO("mono: output texture %ux%u (RGBA) - the head-locked screen shows this", w, h);
+        return true;
+    }
+    void release_target() {
+        if (rtv_) { rtv_->Release(); rtv_ = nullptr; }
+        if (tex_) { tex_->Release(); tex_ = nullptr; }
+        w_ = h_ = 0;
+    }
+
+    d2vr::gfx::BlitQuad      blit_;
+    ID3D11Texture2D*        tex_ = nullptr;
+    ID3D11RenderTargetView* rtv_ = nullptr;
+    uint32_t w_ = 0, h_ = 0;
+    uint32_t frame_ = 0;
+    uint32_t frames_ = 0, stale_ = 0;
+    bool     drawnOnce_ = false;
+};
+
+MonoScreen g_mono;
+
+} // namespace
+
+IStereo* create_mono_screen() { return &g_mono; }
+
+} // namespace d2vr::stereo

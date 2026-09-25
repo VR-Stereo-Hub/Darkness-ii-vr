@@ -11,9 +11,9 @@
 # keeps state.json and captures). 41.0 is OpenXR-only, so no backend needs
 # forcing any more.
 #
-# -ViaSteam: the original author's handoff says a direct exe launch crashes at
-# the menu on some setups (docs/darkness2/HANDOFF-GINGASVR.md, trap 6; it did
-# NOT reproduce here in session 4). Steam starts the exe itself, so the env var
+# -ViaSteam: this exe delay-loads steam_api.dll and expects the Steam client, so a
+# direct launch may refuse without it (CLAUDE.md: launch through Steam). Steam
+# starts the exe itself, so the env var
 # cannot reach it: -ViaSteam writes the manifest into darkness2_vr.ini as
 # [VR] XrRuntimeJson (the mod sets XR_RUNTIME_JSON for its own process from it
 # when the environment carries none), launches through launch-game.ps1, and
@@ -153,7 +153,7 @@ try {
 Start-Sleep -Seconds 5
 if ($ViaSteam) {
     for ($k = 0; $k -lt 25 -and -not $p; $k++) {
-        $p = Get-Process -Name The Darkness II -ErrorAction SilentlyContinue | Select-Object -First 1
+        $p = Get-Process -Name DarknessII -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $p) { Start-Sleep -Seconds 1 }
     }
     if (-not $p) { Restore-Ini; throw "Steam did not start DarknessII.exe within 30 s." }

@@ -38,7 +38,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 
 - [x] R0 verdict written (VR-231, 2026-09-25: the app-dir `d3d9.dll`; ENGINE_NOTES s9)
 - [x] R1 verdict written (VR-232, 2026-09-25: four canaries, 33 min, no revert; ENGINE_NOTES s10)
-- [ ] R2 verdict written and `swig-api.md` committed
+- [ ] R2 verdict written and `swig-api.md` committed (2026-09-25: the map is committed, 177 classes / 1143 methods / 208 attributes, and the VM census is in ENGINE_NOTES s3; the in-game execution proof is still open, VR-233)
 - [ ] R3 verdict written
 - [ ] R4 verdict written
 - [x] R5 extractor committed; verdict written (VR-236, 2026-09-25; GAME_ASSETS s8)
@@ -62,7 +62,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   - [x] `status.json` updates every second (2026-09-25: 716 writes in a 12-minute stretch, `statusWrites` in the file)
   - [x] A forced crash writes a minidump with a readable stack and a crash file with the run
         identity (2026-09-25: `crash test`, a 28 MB dump, `read-dump.py` decodes the exception)
-  - [ ] `xrsim-selftest.ps1` passes (2026-09-25: PASS, 60 frames, FOCUSED) and the game reaches gameplay on the simulator (needs the runtime layer, VR-241)
+  - [x] `xrsim-selftest.ps1` passes (2026-09-25: PASS, 60 frames, FOCUSED) and the game reaches gameplay on the simulator (2026-09-25, VR-241: `xrsim-launch.ps1 -ViaSteam`, `boot.ps1`, the alley in both eyes)
 
 ## S0.5 - The OpenXR layer, the mono screen, the camera eyetest (M1)
 
@@ -78,7 +78,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   (a head-locked quad, both eyes), the `camera eyetest` instrument that writes each candidate
   in turn and reports which one changes the uploaded projection.
 - **Done when**:
-  - [ ] Both simulator eyes receive frames at the game's frame rate for 5 minutes
+  - [x] Both simulator eyes receive frames at the game's frame rate for 5 minutes (2026-09-25, VR-241: `xrsim-soak.ps1`, 24,425 presents = 24,425 submits, 24,404 layered by the sim, FOCUSED; ENGINE_NOTES s11)
   - [ ] `camera eyetest` prints exactly one HONOURED write with the measured FOV delta
   - [x] The device path verdict (Ex vs non-Ex, present call and thread) is in ENGINE_NOTES (2026-09-25, s2: `Direct3DCreate9Ex`, `CreateDeviceEx`, `PresentEx` from the main thread)
 

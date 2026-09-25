@@ -13,6 +13,11 @@
 #include <intrin.h>
 #include "proxy/proxy.h"
 #include "core/config/config.h"
+#include "core/gfx/capture.h"
+#include "core/gfx/d3d11_device.h"
+#include "core/gfx/stereo.h"
+#include "core/vr/apilayer_guard.h"
+#include "core/vr/openxr_runtime.h"
 #include "core/framework/frame_hooks.h"
 #include "core/util/crash.h"
 #include "core/util/log.h"
@@ -135,7 +140,27 @@ void deferred_init()
     }
     d2vr::config::load();          // safe here (post loader-lock); never in DllMain
     d2vr::crash::install();        // fingerprint VEH + minidump filter, before any hook
+    // The stereo seam and the runtime layer (VR-241), in the order the Dishonored
+    // host used: the registry before the config names a method, the API-layer
+    // guard before the loader can see a bad layer, the config setters before the
+    // instance, the device provider before the first session bring-up asks for a
+    // device. init_instance is fail-soft: no runtime = the game runs flat.
+    const d2vr::config::Config& c = d2vr::config::get();
+    d2vr::stereo::register_all();
+    d2vr::vr::disable_bad_api_layers();
+    d2vr::vr::set_runtime_mode(c.vrRuntime);
+    d2vr::vr::set_runtime_json(c.vrRuntimeJson);
+    d2vr::vr::set_screen(c.screenDistanceM, c.screenWidthM);
+    d2vr::vr::set_screen_head_locked(c.screenHeadLocked != 0);
+    if (!d2vr::capture::set_mode(c.captureMode)) d2vr::capture::set_mode("sync");
+    d2vr::capture::set_shared_wait(c.captureSharedWait != 0);
+    d2vr::capture::set_bbox_ms((uint32_t)(c.captureBboxMs < 0 ? 0 : c.captureBboxMs));
+    d2vr::stereo::set_config_method(c.stereoMethod);
+    d2vr::stereo::set_armed(c.stereoArmed != 0);
+    d2vr::vr::set_device_provider(d2vr::d3d11::provide);
+    d2vr::vr::init_instance();
     d2vr::game::init();            // the seam handler, status provider, the present tick, the canaries
+    d2vr::stereo::apply_config_method();
 }
 
 } // namespace d2vr::proxy

@@ -569,6 +569,39 @@ is not forbidden; it is a plan that starts with the measurement that killed its 
 
 Entries go here, newest first, in the same commit as the work that found them.
 
+## A direct DarknessII.exe start refuses without the Steam-launched context (VR-241, 2026-09-25)
+
+What was seen: `xrsim-launch.ps1` (the direct start with `XR_RUNTIME_JSON` in the environment)
+waited 120 s for a runtime line that never came; the old log was untouched.
+What was actually happening: the exe put up a modal `Error` box, `Failed to initialize Steam.
+Make sure the Steam client is running and try again.`, with the client running, before it
+ever asked for d3d9. `steam_api` wants the Steam-launched context, not just the client.
+What it cost: one dead process to find and close, and a launch that counted for nothing.
+The rule: this game runs on the simulator through `xrsim-launch.ps1 -ViaSteam` only; the
+manifest travels in `[VR] XrRuntimeJson` and the launcher restores the ini afterwards. A
+direct start is not a launch route for any script.
+Where the detail is: ENGINE_NOTES s11.
+
+## The seam's ack.txt carried only the first line of a batch (VR-241, 2026-09-25)
+
+What was seen: `game-cmd.ps1` waited on `ack.txt` correctly, but the ack's text was one line
+however many the batch had.
+What was actually happening: `command::poll` tokenised the buffer with `strtok_s` (which
+overwrites each newline with a NUL) and then wrote the same buffer as the ack.
+What it cost: nothing yet; it would have misled the first person to read an ack.
+The rule: copy before tokenising. A file an instrument writes back is evidence and must be
+the whole input.
+
+## PowerShell -File cannot pass an array to install.ps1 -Set (VR-241, 2026-09-25)
+
+What was seen: `install.ps1 -Release -Set "Canary.Tick=1","Canary.LogEverySeconds=5"` from a
+non-PowerShell shell wrote `Tick=1,Canary.LogEverySeconds=5` into the ini as ONE value.
+What was actually happening: `-File` hands arguments through as strings; the array syntax is
+PowerShell's and is only parsed under `-Command`.
+What it cost: one reinstall and a mangled ini value the install diff showed at once.
+The rule: from bash, `powershell -Command "& .\tools\install.ps1 -Set 'A.B=1','C.D=2'"`;
+always read the `ini vs golden` lines the install prints.
+
 ## A 64-bit PowerShell counts 7 of a 32-bit game's 110 modules (VR-231, 2026-09-25)
 
 What was seen: the first external module census said the app-dir `d3d9.dll` was NOT in the

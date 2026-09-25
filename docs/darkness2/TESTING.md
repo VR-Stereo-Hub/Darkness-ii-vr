@@ -43,7 +43,7 @@ Files: the log and the ini next to the exe; `command.txt` / `status.json` in
 
 ## Simulator checks (OpenXR lane, no headset)
 
-`docs/VERIFICATION.md`. `xrsim-launch.ps1`; expect `xr: runtime "d2-xrsim"`,
+`docs/VERIFICATION.md`. `xrsim-launch.ps1`; expect `xr: runtime "d2vr-xrsim"`,
 `xr: pipeline READY`. Then reach gameplay, foreground the window, `mono.xrs` (the rung-1
 gate: a quad layer, both eyes non-black, equal bboxes), `headlook.xrs` (the quad is
 head-locked, so the captured screen must NOT move). `stereo.xrs`, `world-6dof.xrs`,

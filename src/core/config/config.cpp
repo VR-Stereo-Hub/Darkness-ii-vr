@@ -48,7 +48,56 @@ bool write_default(const char* path)
 "CallSite=0\n"
 "Hot=0\n"
 "; The per-canary hits/s and byte re-read line cadence, in seconds.\n"
-"LogEverySeconds=1\n",
+"LogEverySeconds=1\n"
+"\n"
+"[VR]\n"
+"; The OpenXR runtime layer. Runtime=auto takes the 32-bit runtime the system\n"
+"; registers (Virtual Desktop's VDXR, Oculus) and falls back to the bundled SteamVR\n"
+"; shim (d2vr_steamvr32.dll) when there is none and it ships; native|steamvr force one.\n"
+"Runtime=auto\n"
+"; XrRuntimeJson= a runtime manifest for THIS launch (the simulator, or a Steam launch\n"
+"; that cannot carry XR_RUNTIME_JSON). Empty = the loader's choice. A stale value from\n"
+"; a simulator run keeps the headset dark: tools\\xrsim-launch.ps1 restores it.\n"
+"XrRuntimeJson=\n"
+"; A 64-bit implicit OpenXR API layer (an OBS mirror, say) fails xrCreateInstance in\n"
+"; this 32-bit process for every runtime. 1 = opt this process out of such a layer\n"
+"; through the layer's own disable variable (the registry is never written); 0 = report only.\n"
+"DisableBadApiLayers=1\n"
+"\n"
+"[Screen]\n"
+"; Rung 1, the mono screen: the game frame on a quad DistanceMeters away and WidthMeters\n"
+"; wide, the same image in both eyes. HeadLocked=1 keeps it in front of your eyes (turning\n"
+"; your head turns the screen with it); 0 leaves it standing in the room. Live: `screen\n"
+"; <distM> <widthM>` and `screen headlock on|off`.\n"
+"DistanceMeters=1.75\n"
+"WidthMeters=2.4\n"
+"HeadLocked=1\n"
+"\n"
+"[Stereo]\n"
+"; The stereo method the seam starts on: mono (rung 1, works) | aer | reentry (registered\n"
+"; stubs that refuse and leave mono running). `stereo <name>` switches live; `stereo status`.\n"
+"Method=mono\n"
+"; Armed=0 parks the selected method (the game runs flat, the seam stays up).\n"
+"Armed=1\n"
+"\n"
+"[Capture]\n"
+"; How the D3D9 backbuffer reaches the D3D11 texture the runtime submits:\n"
+";   sync     GetRenderTargetData + LockRect + upload, on the present thread, this present\n"
+";   deferred the same readback queued one present behind (hides the CPU wait)\n"
+";   shared   a fenced StretchRect into a D3D9Ex shared surface D3D11 opens (no readback);\n"
+";            needs [Device] Ex=1 and the probe's AVAILABLE\n"
+";   off      the live A/B: the picture freezes\n"
+"; `capture mode <name>` switches live; `capture` prints the cost per present.\n"
+"Mode=deferred\n"
+"; SharedWait=0 delivers the previous present's shared slot (no wait); 1 waits for this one's fence.\n"
+"SharedWait=0\n"
+"; The content bounding-box sample cadence in ms (each is a full-frame CPU readback); 0 = off.\n"
+"BboxMs=30000\n"
+"\n"
+"[Device]\n"
+"; This game creates its own D3D9Ex device (ENGINE_NOTES s2), so Ex here does not create\n"
+"; one: Ex=1 PERMITS the shared-surface capture on it, Ex=0 forces the readback modes.\n"
+"Ex=1\n",
         kConfigVersion);
     fclose(f);
     return true;
@@ -84,6 +133,18 @@ void load()
     g_cfg.canaryHot = d2vr::ini::read_int(ini, "Canary", "Hot", 0);
     g_cfg.canaryLogHz = d2vr::ini::read_int(ini, "Canary", "LogEverySeconds", 1);
     if (g_cfg.canaryLogHz < 1) g_cfg.canaryLogHz = 1;
+    d2vr::ini::read_string(ini, "VR", "Runtime", "auto", g_cfg.vrRuntime, sizeof(g_cfg.vrRuntime));
+    d2vr::ini::read_string(ini, "VR", "XrRuntimeJson", "", g_cfg.vrRuntimeJson, sizeof(g_cfg.vrRuntimeJson));
+    g_cfg.vrDisableBadApiLayers = d2vr::ini::read_int(ini, "VR", "DisableBadApiLayers", 1);
+    g_cfg.screenDistanceM = d2vr::ini::read_float(ini, "Screen", "DistanceMeters", 1.75f);
+    g_cfg.screenWidthM = d2vr::ini::read_float(ini, "Screen", "WidthMeters", 2.4f);
+    g_cfg.screenHeadLocked = d2vr::ini::read_int(ini, "Screen", "HeadLocked", 1);
+    d2vr::ini::read_string(ini, "Stereo", "Method", "mono", g_cfg.stereoMethod, sizeof(g_cfg.stereoMethod));
+    g_cfg.stereoArmed = d2vr::ini::read_int(ini, "Stereo", "Armed", 1);
+    d2vr::ini::read_string(ini, "Capture", "Mode", "deferred", g_cfg.captureMode, sizeof(g_cfg.captureMode));
+    g_cfg.captureSharedWait = d2vr::ini::read_int(ini, "Capture", "SharedWait", 0);
+    g_cfg.captureBboxMs = d2vr::ini::read_int(ini, "Capture", "BboxMs", 30000);
+    g_cfg.deviceEx = d2vr::ini::read_int(ini, "Device", "Ex", 1);
 
     if (g_cfg.dataDir[0]) d2vr::paths::set_data_dir(g_cfg.dataDir);
     // The environment wins over the ini for the log levels (set from DllMain).
@@ -98,6 +159,11 @@ void load()
               g_cfg.logLevel, g_cfg.logCats, g_cfg.dataDir, d2vr::paths::data_dir());
     D2VR_INFO("config: [Canary] Cold=%d Tick=%d CallSite=%d Hot=%d LogEverySeconds=%d",
               g_cfg.canaryCold, g_cfg.canaryTick, g_cfg.canaryCallSite, g_cfg.canaryHot, g_cfg.canaryLogHz);
+    D2VR_INFO("config: [VR] Runtime=%s XrRuntimeJson='%s' DisableBadApiLayers=%d  [Screen] DistanceMeters=%.2f WidthMeters=%.2f HeadLocked=%d",
+              g_cfg.vrRuntime, g_cfg.vrRuntimeJson, g_cfg.vrDisableBadApiLayers,
+              g_cfg.screenDistanceM, g_cfg.screenWidthM, g_cfg.screenHeadLocked);
+    D2VR_INFO("config: [Stereo] Method=%s Armed=%d  [Capture] Mode=%s SharedWait=%d BboxMs=%d  [Device] Ex=%d",
+              g_cfg.stereoMethod, g_cfg.stereoArmed, g_cfg.captureMode, g_cfg.captureSharedWait, g_cfg.captureBboxMs, g_cfg.deviceEx);
 }
 
 } // namespace d2vr::config

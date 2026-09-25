@@ -52,5 +52,7 @@ DWORD         present_thread();       // 0 until the first present
 uintptr_t     present_caller(int i);  // first 3 return addresses into the exe (0 = none)
 uintptr_t     endscene_caller(int i);
 double        present_hz();           // measured over the last second
+unsigned long submits();              // presents that handed the runtime a texture
+bool          vr_poisoned();          // a fault in the VR work: the game runs flat for the session
 
 } // namespace d2vr::frame

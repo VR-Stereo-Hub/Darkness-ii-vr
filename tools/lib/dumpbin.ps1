@@ -30,3 +30,21 @@ function Get-D2Exports {
     }
     return $rows
 }
+
+# Returns the DLL names a module imports statically (its import directory), one
+# per line, upper-cased and sorted: the shape of tests\golden\d3d9-imports.txt.
+# The proxy must add no static import that changes the game's DLL load order,
+# so this list is asserted after every build (exports-check.ps1).
+function Get-D2Imports {
+    param([Parameter(Mandatory)][string]$Dll)
+    if (-not (Test-Path $Dll)) { throw "not found: $Dll" }
+    $out = & (Get-D2Dumpbin) /imports $Dll
+    $rows = @()
+    $inImports = $false
+    foreach ($l in $out) {
+        if ($l -match 'Section contains the following imports') { $inImports = $true; continue }
+        if ($l -match 'Section contains the following delay load imports') { $inImports = $false; continue }
+        if ($inImports -and $l -match '^\s+([A-Za-z0-9_.-]+\.dll)\s*$') { $rows += $Matches[1].ToUpper(); continue }
+    }
+    return @($rows | Sort-Object -Unique)
+}

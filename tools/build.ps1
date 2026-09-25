@@ -23,7 +23,10 @@ try {
     # The legacy switch is decided by THIS call and by nothing else: read what
     # the cache holds and reconfigure whenever it is not what was asked for.
     $legacyFlag = if ($Legacy) { "ON" } else { "OFF" }
-    if (-not (Test-Path "build\CMakeCache.txt")) {
+    # A configure that failed (missing submodules, say) leaves a CMakeCache.txt behind
+    # with no project files; test for the generated solution, not the cache.
+    if (-not (Test-Path "build\ALL_BUILD.vcxproj")) {
+        if (Test-Path "build\CMakeCache.txt") { Remove-Item "build\CMakeCache.txt" -Force }
         & $cmake --preset win32 "-DD2VR_WITH_LEGACY=$legacyFlag"
         if ($LASTEXITCODE -ne 0) { throw "CMake configure failed." }
     } else {

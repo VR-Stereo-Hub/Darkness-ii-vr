@@ -1,0 +1,11 @@
+# The static imports of the proxy d3d9.dll. Every DLL here is a static import of
+# DarknessII.exe itself (ENGINE_NOTES s1/s9), so it is loaded before the exe asks
+# for d3d9 and the proxy changes nothing about the game's DLL load order (R0).
+# advapi32: the runtime layer's and the static OpenXR loader's registry read of
+# the ActiveRuntime key. shell32: the layer's SHGetFolderPathW. d3d9, d3d11,
+# dxgi, d3dcompiler and dbghelp are LoadLibrary'd. tools\exports-check.ps1
+# asserts this list after every build.
+ADVAPI32.DLL
+KERNEL32.DLL
+SHELL32.DLL
+USER32.DLL

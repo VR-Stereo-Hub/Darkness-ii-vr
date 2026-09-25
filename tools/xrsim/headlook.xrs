@@ -1,17 +1,29 @@
-# headlook.xrs - does head rotation actually drive the camera?
+# headlook.xrs - the mono screen is HEAD-LOCKED: turning the simulated head must
+# NOT move the picture in the eye (the quad lives in VIEW space and turns with
+# the head). The captured content bounding box is the same at every yaw, within
+# a percent. When head tracking drives the game camera (ROADMAP S1), a second
+# sequence asserts the opposite on the CONTENT (the world moves, the screen does
+# not); this one stays the rung-1 contract.
 #
-# Read the result with img-diff between the captures; the mean-abs-diff should
-# rise monotonically with the yaw delta and be well above the ~0.4 noise floor.
+# Run it in GAMEPLAY (boot.ps1 first), with the game window foregrounded.
 reset
 head rot 0 0 0
 @frames 10
 @shot look_00
+@capassert stats.nonBlackPctL ge 10
 head rot 10 0 0
 @frames 10
 @shot look_10
+@capdiff stats.bboxPctL 1
+@capdiff stats.bboxPctR 1
 head rot 25 0 0
 @frames 10
 @shot look_25
+@capdiff stats.bboxPctL 1
+@capdiff stats.bboxPctR 1
 head rot 45 0 0
 @frames 10
 @shot look_45
+@capdiff stats.bboxPctL 1
+@capdiff stats.bboxPctR 1
+head rot 0 0 0

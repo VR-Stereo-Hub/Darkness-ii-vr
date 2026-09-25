@@ -101,8 +101,9 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   but per-tick rotation is written at the engine tick from the mod, not through Lua, to keep
   latency at one tick.
 - **Done when**:
-  - [ ] Headset run: the game on the mono screen in both eyes, comfortable for the first
-        chapter (M1 closes here)
+  - [x] Headset run: the game on the mono screen in both eyes, comfortable for the first
+        chapter (M1 closes here) (2026-09-25, VR-243: accepted in the headset on VDXR with the
+        installed geometry, 2.4 m wide at 1.75 m, head-locked, build 01eed75; ENGINE_NOTES s11)
   - [ ] A +90 degree headset yaw gives a +90 degree view with the stick still adding on top;
         latency one tick, logged
   - [ ] A 30 cm lean moves the camera 30 cm in-world, measured against a doorway of known

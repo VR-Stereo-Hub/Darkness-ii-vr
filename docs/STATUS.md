@@ -4,42 +4,20 @@ Session handoff, newest first. Every session rewrites "Where things are RIGHT NO
 steps" and prepends a dated block. A session that ends without pushing this file is a failed
 handoff.
 
-## Where things are RIGHT NOW (2026-09-25, M1 session 2)
+## Where things are RIGHT NOW (2026-09-25, M1 session 3 start)
 
-- **The game's frame reaches both eyes.** The Dishonored runtime layer (`core/vr/openxr_runtime`,
-  `openxr_input`, verbatim under the rename rule in ARCHITECTURE) is wired into the present
-  path behind the two host seams; the stereo seam (`core/gfx/stereo`) has `mono` working and
-  `aer`/`reentry` as refusing stubs; the carry (`core/gfx/capture`, sync/deferred/shared) and
-  the mod's D3D11 device on the runtime's LUID are in. On the simulator (launch 3): instance,
-  adapter MATCH, a 2560x1440 swapchain pair, FOCUSED, `pipeline READY`, the alley on the
-  head-locked quad in both eyes. `mono.xrs` and `headlook.xrs` PASS; the 5-minute soak:
-  24,425 presents = 24,425 submits, 24,404 layered by the sim (ENGINE_NOTES s11).
-- **The capture A/B is measured**: deferred 3.4-3.8 ms per present, shared 11-13 us with the
-  tick rate rising from 80 to the display's 90 Hz. `[Capture] Mode=deferred` ships in this PR
-  as ordered; the numbers say `shared` should be the default once the headset run agrees.
-- **VDXR (launch 4)**: instance on `VirtualDesktopXR` 1.0.10, the 64-bit VD compatibility
-  layer opted out per process, no headset connected at the time, the game running flat and
-  retrying every 5 s. **The game was left running for the headset judgement** (see the
-  question in the session log); if it is closed, `.\tools\launch-game.ps1 -WaitBanner` then
-  `.\tools\boot.ps1` brings it back.
-- **R2's offline half is done**: `docs/darkness2/swig-api.md` (177 classes, 1143 methods, 208
-  attributes, 44 globals, every wrapper address; `tools/swig-dump.py --check` re-verifies it),
-  the VM census in ENGINE_NOTES s3 (one main state in a static holder, float numbers, every
-  script callback through `ScriptSystem::Resume` -> `lua_resume`, `lua_pcall` with six
-  init-or-debug callers only), every Lua address with its prefix in `patterns.h` and s8. **The
-  in-game half is NOT done**: the lane module that installs the wraps and runs a chunk was not
-  written this session (the session's safety system withheld that file; see the log entry).
-- **Harness**: `xrsim-launch.ps1` works for this game only `-ViaSteam` (a direct exe start is
-  refused by `steam_api`, TRAPS s12); `xrsim-soak.ps1` is the S0.5 instrument; `xrsim-run.ps1`
-  has `@capassert`, `@capsame`, `@capdiff`; the ack carries the whole batch; the proxy's
-  import list is asserted against `tests/golden/d3d9-imports.txt`.
-- **Branch and PR**: one branch for VR-241 + VR-240 + the R2 research (the user's decision),
-  `claude/vr-241-runtime-mono-lua`, PR #3 against `staging`
-  (https://github.com/VR-Stereo-Hub/Darkness-ii-vr/pull/3) with `Fixes VR-241, VR-240` and
-  `Ref VR-233`. Not merged; the merge is the user's, then VR-241 and VR-240 go to Done
-  through the MCP. They are In Review with the PR attached.
-- R0 count: 4 of 10 launches with the banner (2 in session 1, 2 here; the refused direct
-  start loaded nothing and does not count).
+- **PR #3 is merged into `staging`** (3b5f878): the runtime layer, the mono screen, the carry,
+  the R2 research. VR-241, VR-240 and VR-243 are Done.
+- **The mono screen is accepted in the headset** (VR-243, build 01eed75, VDXR): one stable
+  head-locked screen in both eyes with the installed geometry (2.4 m wide at 1.75 m,
+  head-locked). ROADMAP S1 box 1 is ticked; M1's headset criterion is met.
+- **The capture A/B is measured, not yet decided**: deferred 3.4-3.8 ms per present, shared
+  11-13 us with the tick rate rising to the display's 90 Hz. `[Capture] Mode=deferred` still
+  ships; the flip to `shared` waits for the headset A/B (the one question of the next run).
+- **R2's offline half is done** (`docs/darkness2/swig-api.md`, ENGINE_NOTES s3, every Lua
+  address in `patterns.h`); **the in-game half (the lane module) is this session's work**
+  (VR-233), then a first F10 panel (Ref VR-275) and the camera eyetest (VR-242).
+- R0 count: 4 of 10 launches with the banner. The game is not running.
 
 ## Next steps (in order)
 

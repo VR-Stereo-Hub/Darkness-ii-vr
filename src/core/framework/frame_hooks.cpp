@@ -14,6 +14,7 @@
 #include "core/gfx/d3d9ex_host.h"
 #include "core/gfx/stereo.h"
 #include "core/hooks/vtable.h"
+#include "core/framework/vs_const.h"
 #include "core/vr/openxr_runtime.h"
 #include "core/util/clock.h"
 #include "core/util/crash.h"
@@ -345,6 +346,9 @@ void hook_device(IDirect3DDevice9* dev, bool ex)
     g_device = dev; g_info.created = true; g_info.ex = ex;
     D2VR_INFO("device hooks installed on %p (Present/Reset/EndScene%s); device is %s",
               (void*)dev, ex ? " + PresentEx/ResetEx" : "", ex ? "IDirect3DDevice9Ex" : "IDirect3DDevice9");
+    // The projection watch's slots (91/92/94) go in here too, before the game
+    // creates its first shader, so every CTAB is seen (core/framework/vs_const).
+    d2vr::vsconst::hook_device(dev);
 }
 
 HRESULT STDMETHODCALLTYPE hkCreateDevice(IDirect3D9* self, UINT adapter, D3DDEVTYPE type, HWND focus, DWORD flags,

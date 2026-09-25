@@ -38,7 +38,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 
 - [x] R0 verdict written (VR-231, 2026-09-25: the app-dir `d3d9.dll`; ENGINE_NOTES s9)
 - [x] R1 verdict written (VR-232, 2026-09-25: four canaries, 33 min, no revert; ENGINE_NOTES s10)
-- [ ] R2 verdict written and `swig-api.md` committed (2026-09-25: the map is committed, 177 classes / 1143 methods / 208 attributes, and the VM census is in ENGINE_NOTES s3; the in-game execution proof is still open, VR-233)
+- [x] R2 verdict written and `swig-api.md` committed (2026-09-25, VR-233: the map (177 classes / 1143 methods / 208 attributes) and the VM census in ENGINE_NOTES s3; the in-game half measured on launch 5: the safe call point is the entry of `ScriptSystem::Resume` on the game thread, which is the present thread; `SetBaseFovOverride(110)` ran from the lane and read back; l_G matched on 110,664 resumes; the `lua_pcall` control flat in play; 10 of 10 SWIG modules verified live)
 - [ ] R3 verdict written
 - [ ] R4 verdict written
 - [x] R5 extractor committed; verdict written (VR-236, 2026-09-25; GAME_ASSETS s8)
@@ -79,7 +79,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   in turn and reports which one changes the uploaded projection.
 - **Done when**:
   - [x] Both simulator eyes receive frames at the game's frame rate for 5 minutes (2026-09-25, VR-241: `xrsim-soak.ps1`, 24,425 presents = 24,425 submits, 24,404 layered by the sim, FOCUSED; ENGINE_NOTES s11)
-  - [ ] `camera eyetest` prints exactly one HONOURED write with the measured FOV delta
+  - [ ] `camera eyetest` prints exactly one HONOURED write with the measured FOV delta (2026-09-25, VR-242: the write IS found and measured by hand, `SetBaseFovOverride` HONOURED as a vertical angle, 45.00 -> 60.00 -> 80.00 -> 45.00 read from the projection; the negative control prints DISCARDED; the instrument's own HONOURED line waits for its adaptive settle on the next launch, ENGINE_NOTES s12)
   - [x] The device path verdict (Ex vs non-Ex, present call and thread) is in ENGINE_NOTES (2026-09-25, s2: `Direct3DCreate9Ex`, `CreateDeviceEx`, `PresentEx` from the main thread)
 
 ## S1 - Mono screen in a headset; head tracking; positional; render size (M1 / M2)
@@ -101,8 +101,9 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   but per-tick rotation is written at the engine tick from the mod, not through Lua, to keep
   latency at one tick.
 - **Done when**:
-  - [ ] Headset run: the game on the mono screen in both eyes, comfortable for the first
-        chapter (M1 closes here)
+  - [x] Headset run: the game on the mono screen in both eyes, comfortable for the first
+        chapter (M1 closes here) (2026-09-25, VR-243: accepted in the headset on VDXR with the
+        installed geometry, 2.4 m wide at 1.75 m, head-locked, build 01eed75; ENGINE_NOTES s11)
   - [ ] A +90 degree headset yaw gives a +90 degree view with the stick still adding on top;
         latency one tick, logged
   - [ ] A 30 cm lean moves the camera 30 cm in-world, measured against a doorway of known

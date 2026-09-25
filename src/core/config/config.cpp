@@ -50,6 +50,27 @@ bool write_default(const char* path)
 "; The per-canary hits/s and byte re-read line cadence, in seconds.\n"
 "LogEverySeconds=1\n"
 "\n"
+"[Lua]\n"
+"; R2 (docs/ROADMAP.md), the Lua lane: Enabled=1 installs three byte-verified wraps from the\n"
+"; first present (ScriptSystem::Resume, lua_resume, lua_pcall) so that `lua run <text>` and\n"
+"; `lua fov <deg>` run ONE chunk of the mod's own text on the engine's main lua_State, on the\n"
+"; game thread, at the engine's own script entry. Default OFF. `lua on|off` flips it live;\n"
+"; `lua status` prints the counters; the re-read line follows [Canary] LogEverySeconds.\n"
+"Enabled=0\n"
+"\n"
+"[Overlay]\n"
+"; The F10 panel (the simple form; Ref VR-275): one ImGui window drawn into the eye texture,\n"
+"; hidden until F10 or the `overlay on|toggle` seam word. Enabled=0 disarms the key.\n"
+"; UiScale=0 picks the text scale from the eye height; a value (0.8-3) overrides it.\n"
+"Enabled=1\n"
+"UiScale=0\n"
+"\n"
+"[Camera]\n"
+"; The projection watch (VR-242): read the renderer's SS_Projection constant back at every\n"
+"; upload and log the rendered FOV. Default OFF; `camera projwatch on|off` live; `camera\n"
+"; eyetest` (which FOV write the renderer honours) switches it on for the test.\n"
+"ProjWatch=0\n"
+"\n"
 "[VR]\n"
 "; The OpenXR runtime layer. Runtime=auto takes the 32-bit runtime the system\n"
 "; registers (Virtual Desktop's VDXR, Oculus) and falls back to the bundled SteamVR\n"
@@ -133,6 +154,10 @@ void load()
     g_cfg.canaryHot = d2vr::ini::read_int(ini, "Canary", "Hot", 0);
     g_cfg.canaryLogHz = d2vr::ini::read_int(ini, "Canary", "LogEverySeconds", 1);
     if (g_cfg.canaryLogHz < 1) g_cfg.canaryLogHz = 1;
+    g_cfg.luaEnabled = d2vr::ini::read_int(ini, "Lua", "Enabled", 0);
+    g_cfg.overlayEnabled = d2vr::ini::read_int(ini, "Overlay", "Enabled", 1);
+    g_cfg.overlayUiScale = d2vr::ini::read_float(ini, "Overlay", "UiScale", 0.0f);
+    g_cfg.cameraProjWatch = d2vr::ini::read_int(ini, "Camera", "ProjWatch", 0);
     d2vr::ini::read_string(ini, "VR", "Runtime", "auto", g_cfg.vrRuntime, sizeof(g_cfg.vrRuntime));
     d2vr::ini::read_string(ini, "VR", "XrRuntimeJson", "", g_cfg.vrRuntimeJson, sizeof(g_cfg.vrRuntimeJson));
     g_cfg.vrDisableBadApiLayers = d2vr::ini::read_int(ini, "VR", "DisableBadApiLayers", 1);
@@ -157,8 +182,10 @@ void load()
     D2VR_INFO("config: %s (version %d%s) Log.Level=%s Log.Cats='%s' Paths.DataDir='%s' -> data %s",
               ini, g_cfg.version, g_cfg.version == kConfigVersion ? "" : " - NOT the current version",
               g_cfg.logLevel, g_cfg.logCats, g_cfg.dataDir, d2vr::paths::data_dir());
-    D2VR_INFO("config: [Canary] Cold=%d Tick=%d CallSite=%d Hot=%d LogEverySeconds=%d",
-              g_cfg.canaryCold, g_cfg.canaryTick, g_cfg.canaryCallSite, g_cfg.canaryHot, g_cfg.canaryLogHz);
+    D2VR_INFO("config: [Canary] Cold=%d Tick=%d CallSite=%d Hot=%d LogEverySeconds=%d  [Lua] Enabled=%d  [Overlay] Enabled=%d UiScale=%.2f",
+              g_cfg.canaryCold, g_cfg.canaryTick, g_cfg.canaryCallSite, g_cfg.canaryHot, g_cfg.canaryLogHz, g_cfg.luaEnabled,
+              g_cfg.overlayEnabled, g_cfg.overlayUiScale);
+    D2VR_INFO("config: [Camera] ProjWatch=%d", g_cfg.cameraProjWatch);
     D2VR_INFO("config: [VR] Runtime=%s XrRuntimeJson='%s' DisableBadApiLayers=%d  [Screen] DistanceMeters=%.2f WidthMeters=%.2f HeadLocked=%d",
               g_cfg.vrRuntime, g_cfg.vrRuntimeJson, g_cfg.vrDisableBadApiLayers,
               g_cfg.screenDistanceM, g_cfg.screenWidthM, g_cfg.screenHeadLocked);

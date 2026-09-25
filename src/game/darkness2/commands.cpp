@@ -7,6 +7,10 @@
 #include "game/darkness2/game.h"
 #include "game/darkness2/patterns.h"
 #include "game/darkness2/canaries.h"
+#include "game/darkness2/lua/lane.h"
+#include "game/darkness2/panel.h"
+#include "game/darkness2/camera.h"
+#include "core/ui/overlay.h"
 #include "proxy/proxy.h"
 #include "core/config/config.h"
 #include "core/framework/command.h"
@@ -58,6 +62,9 @@ bool on_off(const char* v, bool* out)
 bool game_command(const char* cmd, const char* args)
 {
     if (canaries::command(cmd, args)) return true;
+    if (lua::command(cmd, args)) return true;
+    if (d2vr::overlay::command(cmd, args)) return true;
+    if (camera::command(cmd, args)) return true;
     // The stereo seam (VR-241): `stereo` / `stereo status`, `stereo <mono|aer|reentry>`
     // (a refusal leaves the previous method running), `stereo arm on|off`.
     if (!strcmp(cmd, "stereo")) {
@@ -145,6 +152,7 @@ bool game_command(const char* cmd, const char* args)
     // DLL_PROCESS_DETACH under the loader lock. Not handled: the word falls through.
     if (!strcmp(cmd, "quit")) {
         D2VR_INFO("quit: tearing the VR session down on the present thread first");
+        d2vr::overlay::shutdown();   // ImGui's device objects go before the D3D11 device
         d2vr::stereo::shutdown();
         d2vr::vr::shutdown("quit");
         return false;
@@ -233,6 +241,15 @@ void status_provider(d2vr::status::Writer& w)
             w.end_obj();
         }
     w.end_obj();
+    w.obj("lua");
+        lua::status(w);
+    w.end_obj();
+    w.obj("overlay");
+        d2vr::overlay::status(w);
+    w.end_obj();
+    w.obj("camera");
+        camera::status(w);
+    w.end_obj();
     w.obj("xr");
         w.kv("runtime", d2vr::vr::runtime_name());
         w.kv("session", d2vr::vr::session_state_name());
@@ -285,8 +302,15 @@ void present_tick(IDirect3DDevice9*, double nowMs)
         g_canariesArmed = true;
         if (d2vr::diag::skip("canaries")) D2VR_WARN("canaries: SKIPPED by D2VR_SKIP");
         else canaries::init_from_config();
+        // The Lua lane arms the same way: from the first present, never earlier.
+        if (d2vr::diag::skip("lua")) D2VR_WARN("lua: SKIPPED by D2VR_SKIP");
+        else lua::init_from_config();
+        camera::init_from_config();
     }
     canaries::tick(nowMs);
+    lua::tick(nowMs);
+    camera::present_tick(nowMs);   // rolls the projection vote, steps the eyetest
+    d2vr::overlay::tick();   // the F10 edge, on the present thread
     D2VR_LOG_EVERY_MS(D2VR_CAT, d2vr::log::Level::Info, 30000,
         "heartbeat: %lu presents at %.1f Hz, %lu commands, %lu status writes, %lu shots, xr=%s/%s stereo=%s submits=%lu",
         d2vr::frame::presents(), d2vr::frame::present_hz(), d2vr::command::lines(), d2vr::status::writes(), d2vr::shot::count(),
@@ -307,7 +331,9 @@ void init()
     d2vr::status::set_provider(status_provider);
     d2vr::frame::set_tick(present_tick);
     d2vr::crash::set_context("flat (no VR runtime yet)");
-    D2VR_INFO("game layer ready: seam handler, status provider, present tick registered; canaries arm on the first present");
+    d2vr::overlay::init();   // the F10 panel's draw hook on the stereo seam (hidden until F10)
+    panel::install();        // its game section: the Lua lane and the canaries
+    D2VR_INFO("game layer ready: seam handler, status provider, present tick, overlay registered; canaries and the Lua lane arm on the first present");
 }
 
 } // namespace d2vr::game

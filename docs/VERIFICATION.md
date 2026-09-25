@@ -38,9 +38,11 @@ One row per intent, naming the tool, the command and how to read the result. Row
 | Did the 30-minute protocol complete (live) | `soak.ps1` | `.\tools\soak.ps1 -Minutes 30` | exit 0, `byte reverts/changes: 0`, `exit: clean`; exit 4 with the log's last lines is the CEG failure shape |
 | Both eyes non-black on the mono screen | `xrsim-run.ps1` | `-Path tools\xrsim\mono.xrs` | a quad layer, both eyes non-black, equal bboxes; a black eye attributed by the `COMPOSITOR fault` / `APP fault` line |
 | The screen is head-locked | `xrsim-run.ps1` | `headlook.xrs` | the captured screen does NOT move under head yaw |
-| Which FOV write is honoured | `game-cmd.ps1` | `"camera eyetest"` | exactly one HONOURED verdict, the rest DISCARDED, then DONE |
+| Which FOV write is honoured | `game-cmd.ps1` | `"camera eyetest"` (in gameplay, standing still; `"camera eyetest nowrite"` is the negative control) | the `lua` candidate HONOURED as one hypothesis (vert/horiz/h169) on both asks with the revert OK, then DONE; `nowrite` prints DISCARDED on both asks. INVALID = the baseline was not still or the watch saw no perspective mode |
+| The rendered FOV as a number | `game-cmd.ps1` | `"camera projwatch on"` then `"camera status"` | `vsconst: projection V=.. H=.. aspect=..` lines on change; `camera status` names the SS_Projection register, the vote and the caller thread. `camera names on` lists every CTAB constant of the shaders created from then on |
+| The F10 panel reaches both eyes | `xrsim-run.ps1` | `-Path tools\xrsim\panel.xrs` (in gameplay) | non-black rises past 30 percent in BOTH eyes while `overlay on`, equal bboxes, and falls back on `overlay off`; `overlay status` prints draws and toggles |
 | Stereo geometry | `xrsim-run.ps1` | `stereo.xrs` | two projection views, `eyeSeparationM == IPD`, left vs right `img-diff` well above the noise floor |
-| The Lua lane works (after R2) | `game-cmd.ps1` | `"lua print(1+1)"` | `2` in the log from the game thread |
+| The Lua lane works (R2) | `game-cmd.ps1` | `"lua on"` `"lua status"` `"lua run return tostring(1+1)"` `"lua fov 110"` `"lua swigcheck"` | the `lua lane:` line every LogEverySeconds: Resume hits/s > 0 on the game thread, l_G MATCH with 0 MISMATCH, engine pcalls flat in play; `lua: chunk 'run' RAN ... -> 2`; `fov` reads back `GetBaseFovOverride=110` and the shot is visibly wider; swigcheck 10 of 10 MATCH |
 | An animation started or was suppressed (after R7) | the log | `D2VR_LOG_CATS=anim:debug` | named start lines; a suppressed name absent |
 
 ## The simulated runtime (planned; port of Dishonored's `xrsim`)

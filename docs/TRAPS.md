@@ -569,6 +569,18 @@ is not forbidden; it is a plan that starts with the measurement that killed its 
 
 Entries go here, newest first, in the same commit as the work that found them.
 
+## The banner's "built" time is one translation unit's compile time, not the link (VR-233, 2026-09-25)
+
+What was seen: launch 6 ran a dll the install had stamped `10:58:45 PM sha256 B3F70B56`, and
+the log banner said `built Sep 25 2026 22:56:01`, two minutes and one build earlier.
+What was actually happening: the banner's date and time are `__DATE__`/`__TIME__` of the
+proxy's own source file, which is recompiled only when it or a header it includes changes;
+a build that adds new files relinks without touching it. The git describe part of the tag
+(`003b69c-dirty`) was right; the time was stale.
+What it cost: one double-take.
+The rule: the build's identity is the sha256 the install prints and the `git describe` in
+the tag; the banner's clock time is not evidence of which build is running.
+
 ## A direct DarknessII.exe start refuses without the Steam-launched context (VR-241, 2026-09-25)
 
 What was seen: `xrsim-launch.ps1` (the direct start with `XR_RUNTIME_JSON` in the environment)

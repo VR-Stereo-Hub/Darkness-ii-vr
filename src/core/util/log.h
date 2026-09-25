@@ -22,6 +22,7 @@ enum class Level : uint8_t { Error = 0, Warn, Info, Debug, Trace };
 enum class Cat : uint8_t {
     core, proxy, cfg, d3d, present, hooks, canary, cmd, status, crash, input, capture, game, xr, sim,
     openxr, xrinput, perf, stereo, lua,   // the runtime layer, its action layer, the profilers, the stereo seam, the Lua lane
+    overlay, camera,                       // the F10 panel, the camera seam and its instruments
     COUNT
 };
 

@@ -107,6 +107,10 @@ struct CtabInfo { bool found; uint16_t reg, count; uint32_t names; uint16_t regS
 bool name_matches(const char* name)
 {
     if (!strcmp(name, "SS_Projection")) return true;
+    // Launch 7 (2026-09-25): this game's vertex shaders take `WorldViewProjection`
+    // at c0 and never a pure projection. With a rigid world and view, P00 and P11
+    // are the top-3 norms of its first two columns (decompose_wvp below).
+    if (!strcmp(name, "WorldViewProjection")) return true;
     const char* colon = strrchr(name, ':');
     if (colon && !strcmp(colon + 1, "SS_Projection")) return true;
     const char* dot = strrchr(name, '.');
@@ -115,6 +119,35 @@ bool name_matches(const char* name)
     if (n >= 10 && !_stricmp(name + n - 10, "Projection")) {
         static const char* const kComposite[] = { "World", "View", "Inverse", "Inv", "Prev", "Shadow", "Light", "Texture", "Reflect" };
         for (const char* k : kComposite) if (contains_nocase(name, k)) return false;
+        return true;
+    }
+    return false;
+}
+
+// M = W * V * P with W and V rigid (row-vector convention): column 0 of M is
+// R's column 0 times P00, column 1 is R's column 1 times P11, column 3 is R's
+// column 2 (unit length). So P00 = |c0|, P11 = |c1|, with |c3| == 1 and the
+// three mutually orthogonal as the test that W*V was rigid (a scaled W fails
+// it, an orthographic P has |c3| == 0). The same holds on ROWS when the matrix
+// is packed transposed; `rows` says which packing passed. Copied as a METHOD
+// from the Dishonored mod's view-projection helpers; nothing numeric.
+float dot3(const float* a, int sa, const float* b, int sb) { return a[0] * b[0] + a[sa] * b[sb] + a[2 * sa] * b[2 * sb]; }
+bool decompose_wvp(const float* m, float* p00, float* p11, bool* rows)
+{
+    for (int pass = 0; pass < 2; pass++) {
+        // pass 0: columns (element (r,c) at m[r*4+c]; a column's stride is 4); pass 1: rows (stride 1).
+        const int stride = pass == 0 ? 4 : 1;
+        const float* c0 = m + (pass == 0 ? 0 : 0);
+        const float* c1 = m + (pass == 0 ? 1 : 4);
+        const float* c3 = m + (pass == 0 ? 3 : 12);
+        const float n3 = sqrtf(dot3(c3, stride, c3, stride));
+        if (fabsf(n3 - 1.0f) > 0.002f) continue;
+        const float n0 = sqrtf(dot3(c0, stride, c0, stride)), n1 = sqrtf(dot3(c1, stride, c1, stride));
+        if (n0 < 0.05f || n1 < 0.05f || n0 > 50.0f || n1 > 50.0f) continue;
+        if (fabsf(dot3(c0, stride, c3, stride)) > 0.002f * n0) continue;
+        if (fabsf(dot3(c1, stride, c3, stride)) > 0.002f * n1) continue;
+        if (fabsf(dot3(c0, stride, c1, stride)) > 0.002f * n0 * n1) continue;
+        *p00 = n0; *p11 = n1; *rows = pass == 1;
         return true;
     }
     return false;
@@ -281,11 +314,13 @@ HRESULT STDMETHODCALLTYPE hkSetVertexShader(IDirect3DDevice9* self, IDirect3DVer
 
 bool is_perspective(const float* m) { return looks_perspective(m); }
 
-void vote(const float* m)
+// (p00, p11) are the projection scales however they were recovered: the pure
+// matrix's diagonal, or the WVP decomposition. Quantised to 1e-3: rigid
+// objects under one camera agree to float precision.
+void vote(const float* m, float m00, float m11)
 {
-    const float m00 = m[0], m11 = m[5];
     for (int i = 0; i < g_pairCount; i++) {
-        if (fabsf(g_pairs[i].m00 - m00) < 1e-5f && fabsf(g_pairs[i].m11 - m11) < 1e-5f) { g_pairs[i].votes++; return; }
+        if (fabsf(g_pairs[i].m00 - m00) < 1e-3f && fabsf(g_pairs[i].m11 - m11) < 1e-3f) { g_pairs[i].votes++; return; }
     }
     if (g_pairCount < kMaxPairs) {
         Pair& p = g_pairs[g_pairCount++];
@@ -321,21 +356,32 @@ HRESULT STDMETHODCALLTYPE hkSetVertexShaderConstantF(IDirect3DDevice9* self, UIN
             memcpy(full, m, (have >= 4 ? 4 : have) * 16);
             InterlockedIncrement(&g_uploadsTotal);
             g_uploadsThisPresent++;
-            const bool persp = have >= 4 ? is_perspective(full) : (fabsf(full[0]) > 0.0f && fabsf(full[5]) > 0.0f);
+            // Pure projection first (the diagonal IS P00/P11), else a rigid WVP
+            // (the column norms are), else not a projection this upload.
+            float p00 = 0.0f, p11 = 0.0f;
+            bool rows = false, pure = false, persp = false;
+            if (have >= 4) {
+                if (is_perspective(full)) { pure = true; persp = true; p00 = fabsf(full[0]); p11 = fabsf(full[5]); }
+                else if (decompose_wvp(full, &p00, &p11, &rows)) persp = true;
+            }
             if (persp) {
                 InterlockedIncrement(&g_perspTotal);
                 g_perspThisPresent++;
-                if (g_watch) vote(full);
+                if (g_watch) vote(full, p00, p11);
                 if (g_substOn && g_substV > 0.0f) {
-                    // The direct candidate: keep the aspect, replace the diagonal for the asked vertical FOV.
+                    // The direct candidate: keep the aspect, scale the x and y clip
+                    // columns for the asked vertical FOV (M * S: valid for P and for W*V*P).
                     float copy[4096 / 4 * 4];
                     if (count * 4 <= sizeof(copy) / sizeof(copy[0])) {
                         memcpy(copy, data, count * 16);
                         float* mm = copy + (e->reg - start) * 4;
-                        const float aspect = fabsf(mm[5]) > 1e-6f ? mm[5] / mm[0] : 1.0f;
-                        const float newM11 = 1.0f / tanf(g_substV * 0.5f * 3.14159265f / 180.0f) * (mm[5] < 0 ? -1.0f : 1.0f);
-                        mm[5] = newM11;
-                        mm[0] = newM11 / aspect;
+                        const float newP11 = 1.0f / tanf(g_substV * 0.5f * 3.14159265f / 180.0f);
+                        const float k1 = newP11 / p11, k0 = (newP11 * (p00 / p11)) / p00;   // the aspect kept: k0 == k1
+                        const bool scaleRows = pure ? false : rows;
+                        for (int i = 0; i < 4; i++) {
+                            if (!scaleRows) { mm[i * 4 + 0] *= k0; mm[i * 4 + 1] *= k1; }
+                            else            { mm[0 * 4 + i] *= k0; mm[1 * 4 + i] *= k1; }
+                        }
                         InterlockedIncrement(&g_substituted);
                         return g_origSetVSConstF(self, start, copy, count);
                     }
@@ -396,6 +442,7 @@ void present_tick(uint32_t present)
         const Pair& b = g_pairs[best];
         p.valid = fabsf(b.m00) > 1e-6f && fabsf(b.m11) > 1e-6f;
         memcpy(p.m, b.m, sizeof(p.m));
+        p.p00 = fabsf(b.m00); p.p11 = fabsf(b.m11);
         p.votes = b.votes;
         p.fovVdeg = 2.0f * atanf(1.0f / fabsf(b.m11)) * 180.0f / 3.14159265f;
         p.fovHdeg = 2.0f * atanf(1.0f / fabsf(b.m00)) * 180.0f / 3.14159265f;
@@ -412,8 +459,8 @@ void present_tick(uint32_t present)
             strncat(pairs, t, sizeof(pairs) - strlen(pairs) - 1);
         }
         D2VR_LOG_EVERY_MS(D2VR_CAT, ::d2vr::log::Level::Info, 500,
-            "vsconst: projection V=%.2f H=%.2f deg aspect=%.4f (m00 %.5f m11 %.5f, %u of %u perspective uploads, %u total, %u distinct: %s) at present %u",
-            p.fovVdeg, p.fovHdeg, p.aspect, p.m[0], p.m[5], p.votes, p.perspUploads, p.allUploads, p.distinct, pairs, present);
+            "vsconst: projection V=%.2f H=%.2f deg aspect=%.4f (p00 %.5f p11 %.5f, %u of %u perspective uploads, %u total, %u distinct: %s) at present %u",
+            p.fovVdeg, p.fovHdeg, p.aspect, p.p00, p.p11, p.votes, p.perspUploads, p.allUploads, p.distinct, pairs, present);
         g_lastLoggedV = p.fovVdeg;
     }
     g_pairCount = 0; g_uploadsThisPresent = 0; g_perspThisPresent = 0;

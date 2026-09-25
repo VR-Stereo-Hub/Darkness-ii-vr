@@ -33,9 +33,10 @@ bool names();
 struct Projection {
     bool     valid = false;
     float    m[16] = {};       // the four registers as uploaded, row by register
-    float    fovVdeg = 0.0f;   // 2*atan(1/|m11|)
-    float    fovHdeg = 0.0f;   // 2*atan(1/|m00|)
-    float    aspect = 0.0f;    // m11/m00 = tan(H/2)/tan(V/2)
+    float    p00 = 0.0f, p11 = 0.0f;   // the projection scales (the diagonal of a pure P, or the column norms of a rigid W*V*P)
+    float    fovVdeg = 0.0f;   // 2*atan(1/p11)
+    float    fovHdeg = 0.0f;   // 2*atan(1/p00)
+    float    aspect = 0.0f;    // p11/p00 = tan(H/2)/tan(V/2)
     uint32_t present = 0;      // the present it was voted for
     uint32_t votes = 0;        // uploads of this pair in that present
     uint32_t perspUploads = 0; // perspective uploads in that present

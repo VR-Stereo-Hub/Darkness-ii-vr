@@ -1,0 +1,26 @@
+name: Feature request
+description: Something the mod should do that it does not.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What the mod should do
+      description: The player's side first. What you would see or do in the headset, not how it would be built.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters in play
+      description: The moment in the game where its absence shows.
+  - type: input
+    id: headset
+    attributes:
+      label: Your headset
+      placeholder: Quest 3 over Virtual Desktop / Index / other
+  - type: textarea
+    id: priorart
+    attributes:
+      label: Prior art
+      description: Another VR mod or game that does this well, if you know one.

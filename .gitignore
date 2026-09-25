@@ -1,0 +1,30 @@
+# Build output
+build/
+dist/
+*.user
+*.suo
+.vs/
+
+# Game-derived content: never committed. The tools that produce it are ours; their output is not.
+tools/lua/
+tools/cache-out/
+tools/uscript/
+*.png
+*.bmp
+*.dds
+*.dmp
+*.bik
+*.swf
+*.wav
+*.lua
+*.luac
+
+# Logs and harness state
+*.log
+*.prev*.log
+status.json
+command.txt
+ack.txt
+
+# Worktrees created by the desktop app
+.claude/worktrees/

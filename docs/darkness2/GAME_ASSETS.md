@@ -98,9 +98,24 @@ Namespaces: `/EE/` engine, `/D2/` this game, `/DS/` Dark Sector leftovers, `/DON
 - In the game the **left** demon arm is the **Grabby** head and the **right** is the **Slashy**
   head (bladed; the morph target is the talent-unlocked blades).
 
-Unconfirmed: after `/GrabbyHead/DemonArmGrabbyRevised` the FPDJackie header holds 15438 /
-11475 / 7719 / 5163 / 3003, which look like **five LOD levels with about 15k vertices or
-triangles at LOD0**. R5 confirms.
+**Measured by the extractor (R5, 2026-09-25, `tools/cache/extract.py skel`)**:
+
+| Rig | Bone table (skin) | Hierarchy table | `GAME_C1_CAMERA` | Tentacle roots |
+|---|---|---|---|---|
+| `FPDJackie_skel.fbx` (H 10,929 bytes) | 150 names | 164 records, `GAME_C1_ROOT` first with 163 descendants | **absent** | absent (the demon arm chains hang under the body: `GAME_x1_DEMONARM1..32`, `UPJAW1`, `LOWJAW1`, `TONGUE1..5` per side) |
+| `FPDCameraDArms_skel.fbx` (H 6,568 bytes) | 126 names | 127 records | present: h[1], **parent 0 = `GAME_C1_ROOT`, 0 descendants** | `GAME_L1_TENTACLE_CLAV` h[46] and `GAME_R1_TENTACLE_CLAV` h[86], **both parent 0 = `GAME_C1_ROOT`**, 39 descendants each |
+
+So in the shipped skeleton data the camera bone and the two tentacle roots are **siblings under
+the root**, not parent and children; if the demon arms follow the camera in play, the engine
+does it at runtime (the FP entity following the camera transform), not through the bone
+hierarchy. That is half of R6's question answered from data; the runtime half (who writes the
+FP entity's transform) is still R6.
+
+The LOD words: after `/GrabbyHead/DemonArmGrabbyRevised` the header holds five ascending u32
+(11766, 62178, 99894, 127737, 147600) followed by five descending u32 (15438, 11475, 7719,
+5163, 3003): **five LOD levels**, each with what reads as a data offset and a count. Whether
+the count is vertices or triangles is still opaque (the B part has no names to anchor it).
+The three floats 10, 20, 30 right after the bone table read as LOD distances.
 
 ### Secondary tentacles and the cinematic arm
 
@@ -156,11 +171,33 @@ machines and blend trees R7 reads.
 
 ## 8. The extractor (R5) and what it unblocks
 
-Read-only, Python, no third-party dependency beyond an LZF decoder. Commands: `list` (every
-path with cache, sizes, FILETIME), `extract <path> [--out]` (H+B+F joined, into
-`tools/cache-out/`, gitignored), `lua-dump` (every `.lua` as readable source into
-`tools/lua/`, gitignored), `skel <path>` (parse the bone table of a `_skel.fbx` blob by
-searching for the known bone-name strings and report the layout as far as understood).
+`tools/cache/extract.py` (VR-236, 2026-09-25): read-only, Python, an LZF decoder and nothing
+else. Commands: `list [--filter]` (every path with its caches and sizes), `extract <path>
+[--out]` (the H, B and F parts as separate files, into `tools/cache-out/`, gitignored),
+`lua-dump` (every `.lua` as readable source into `tools/lua/`, gitignored), `skel <path>`
+(the bone tables of a `_skel.fbx` blob). Under Git Bash set `MSYS_NO_PATHCONV=1` or the
+`/D2/...` argument is rewritten into a Windows path.
+
+### R5 verdict (measured 2026-09-25)
+
+- **`list` prints 47,425 unique paths** over 102,721 file entries in 24 caches, the survey's
+  number. The `.toc` `parentDirIndex` is a **1-based index into the directory entries only**
+  (offset -1), 0 meaning the root; all-entry numbering gives 83,651 nonsense paths.
+- **`lua-dump` writes 430 scripts as readable source, 0 failures.** The B part of a `.lua` is
+  a Lua 5.1 chunk (`1B 4C 75 61 51 00 01 04 04 04 04 00`) whose top-level function's SOURCE
+  NAME field (`u32 len` then the bytes, NUL-terminated) holds the entire script text; the H
+  part holds `[u32 1][u32 len][asset path][u32 len][the same text]`. `SetFov.lua` line 18 is
+  `camCtrl:SetBaseFovOverride(finalFov)`. (The survey counted about 435 `.lua` entries; 430
+  unique paths exist in the B caches.)
+- **`skel` parses two tables** in a `_skel.fbx` H part: the skin bone table (consecutive
+  `[u32 len][name]` records, then the count as a u32, then the floats 10, 20, 30) and the
+  hierarchy table (`[u32 count]` then `[u32 len][name][u16 parentIndex][u16 descendantCount]`
+  records). The FP rig facts are in section 5.
+- **Still opaque**: everything in the B part (vertex and index streams, skin weights, the
+  animation curves) and the meaning of the per-LOD count. The H part after the tables holds
+  the `Materials={...}` text block, the part list (`JackieHands`, `JackieBody`, the demon arm
+  heads, the `Blades.DemonArmSlashyBladedMorph` morph) and the LOD words; the field order
+  between them is not decoded.
 
 It unblocks: reading the shipped Lua (R2, R3, S1, S6), the FP rig and tentacle inspection (T0,
 T1), the offline animation inventory (A0), and later the loose-file override (M4) and

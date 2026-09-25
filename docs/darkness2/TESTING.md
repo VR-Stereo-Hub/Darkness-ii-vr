@@ -1,7 +1,7 @@
 # Testing - The Darkness II
 
-Everything here is planned until the framework ticket lands; the shape is Dishonored's, which
-proved out over 1.0. `docs/STATUS.md` records what has actually run.
+The shape is Dishonored's, which proved out over 1.0; the loop below has run on this game
+since 2026-09-25 (VR-231/239/232). `docs/STATUS.md` records what has actually run.
 
 ## The rig
 
@@ -62,11 +62,23 @@ head-locked, so the captured screen must NOT move). `stereo.xrs`, `world-6dof.xr
   specific judgements, each with a named live A/B lever. End with "expected noise, not bugs"
   and "toggle `<lever> off` first; if the symptom survives it predates this session".
 
-## One question per launch
+## The session drives the game
 
-The agent never launches the game. It builds, installs, diffs the ini, archives the log and
-hands the user ONE question with the expected outcomes and what each means. A test that needs
-a command typed mid-run is a test that does not get run: build always-on probes or F10 A/Bs.
+The user's decision (2026-09-25): the session launches, plays and quits the game itself, so a
+test that needs keys mid-run IS run. The loop: `install.ps1` (diffs the ini), `launch-game.ps1
+-WaitBanner` (archives the previous log, launches through Steam, checks the banner names the
+installed build), `boot.ps1` (title -> menu -> Continue -> gameplay, a shot per step),
+`game-cmd.ps1 "key ..." / "mouse ..." / "shot ..."`, `game-shot.ps1` (the backbuffer as a BMP
+the session reads as an image), `quit-game.ps1`. `soak.ps1` is the R1 protocol in one command.
+
+Measured input facts: the gameswf title screen and the MAIN menu ignore key taps under about
+400 ms; the PAUSE menu accepts 150 ms. Arrows move the highlight, Enter selects, a confirm
+dialog opens with OK preselected. The pause menu: RESUME, RESTART LEVEL, RESTART CHECKPOINT,
+RELICS, OPTIONS, MAIN MENU. The main menu: CONTINUE (preselected), NEW GAME, VENDETTAS,
+OPTIONS, CREDITS, DOWNLOADABLE CONTENT, QUIT. A mouse click selects the highlighted item.
+
+Perceptual questions still go to the user, ONE per headset run, with the A/B that would
+disprove the answer already in the panel.
 
 ## Crash triage
 

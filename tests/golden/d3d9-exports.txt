@@ -1,0 +1,26 @@
+# The export table of the 32-bit system d3d9.dll (SysWOW64, Windows 11 10.0.26100),
+# which the proxy reproduces exactly: ordinal and undecorated name, NONAME for the
+# six ordinal-only entries. tools\exports-check.ps1 requires an exact match.
+16 NONAME
+17 NONAME
+18 NONAME
+19 NONAME
+20 Direct3DCreate9On12
+21 Direct3DCreate9On12Ex
+22 NONAME
+23 NONAME
+24 Direct3DShaderValidatorCreate9
+25 PSGPError
+26 PSGPSampleTexture
+27 D3DPERF_BeginEvent
+28 D3DPERF_EndEvent
+29 D3DPERF_GetStatus
+30 D3DPERF_QueryRepeatFrame
+31 D3DPERF_SetMarker
+32 D3DPERF_SetOptions
+33 D3DPERF_SetRegion
+34 DebugSetLevel
+35 DebugSetMute
+36 Direct3D9EnableMaximizedWindowedModeShim
+37 Direct3DCreate9
+38 Direct3DCreate9Ex

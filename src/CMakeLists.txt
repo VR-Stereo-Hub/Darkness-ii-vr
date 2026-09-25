@@ -82,6 +82,13 @@ add_library(d2vr_proxy SHARED
     game/darkness2/canaries.cpp    game/darkness2/canaries.h
     game/darkness2/commands.cpp
     game/darkness2/lua/lane.cpp    game/darkness2/lua/lane.h
+    # The F10 panel (the simple form) and its game section; D3DCompile without the import.
+    core/ui/overlay.cpp            core/ui/overlay.h
+    core/gfx/d3dcompile_fwd.cpp
+    game/darkness2/panel.cpp       game/darkness2/panel.h
+    # The projection watch (device slots 91/92/94, the CTAB parse) and the camera eyetest.
+    core/framework/vs_const.cpp    core/framework/vs_const.h
+    game/darkness2/camera.cpp      game/darkness2/camera.h
 )
 set_target_properties(d2vr_proxy PROPERTIES OUTPUT_NAME "d3d9" PREFIX "")
 add_dependencies(d2vr_proxy d2vr_version)
@@ -94,7 +101,11 @@ target_include_directories(d2vr_proxy PRIVATE . "${PROJECT_SOURCE_DIR}" "${CMAKE
 # dxgi and d3dcompiler are LoadLibrary'd; dbghelp is LoadLibrary'd at
 # crash::install. tools\exports-check.ps1 asserts the import list against
 # tests/golden/d3d9-imports.txt.
-target_link_libraries(d2vr_proxy PRIVATE user32 advapi32 shell32 imgui)
+target_link_libraries(d2vr_proxy PRIVATE user32 advapi32 shell32 imgui imgui_dx11)
+# ImGui's DX11 backend asks for d3dcompiler.lib by pragma; the proxy defines
+# D3DCompile itself (core/gfx/d3dcompile_fwd.cpp, LoadLibrary at first use), and
+# this makes a missing definition a link error instead of a silent new import.
+target_link_options(d2vr_proxy PRIVATE /NODEFAULTLIB:d3dcompiler.lib)
 target_compile_options(d2vr_proxy PRIVATE /W3 /permissive-)
 target_compile_definitions(d2vr_proxy PRIVATE D2VR_BUILD_CONFIG="$<CONFIG>")
 # The OpenXR loader is linked statically (no openxr_loader.dll ships). The

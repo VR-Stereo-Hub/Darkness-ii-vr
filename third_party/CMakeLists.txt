@@ -21,6 +21,17 @@ target_include_directories(imgui PUBLIC imgui imgui/backends)
 # overlay has no text input that needs an IME, and imm32 is not an import of the
 # game exe, so the hooks are off and the proxy's import list stays the exe's.
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_WIN32_DEFAULT_IME_FUNCTIONS)
+# The mod's ImGui config (imgui_config/d2vr_imconfig.h): IM_ASSERT logs and
+# continues instead of assert(), which vanishes under NDEBUG and pops a dialog
+# inside the game in Debug. PUBLIC so every ImGui translation unit agrees.
+target_include_directories(imgui PUBLIC imgui_config)
+target_compile_definitions(imgui PUBLIC "IMGUI_USER_CONFIG=<d2vr_imconfig.h>")
+# The DX11 backend ALONE for the F10 panel: the Win32 backend (imgui_backends
+# below) pragmas gdi32 and dwmapi, imports the proxy must not add. The DX11
+# backend's own `#pragma comment(lib, "d3dcompiler")` is answered by the
+# proxy's core/gfx/d3dcompile_fwd.cpp plus /NODEFAULTLIB:d3dcompiler.lib.
+add_library(imgui_dx11 STATIC imgui/backends/imgui_impl_dx11.cpp)
+target_link_libraries(imgui_dx11 PUBLIC imgui)
 add_library(imgui_backends STATIC
     imgui/backends/imgui_impl_win32.cpp
     imgui/backends/imgui_impl_dx11.cpp

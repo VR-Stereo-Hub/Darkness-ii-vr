@@ -31,6 +31,14 @@ void tick(double nowMs);                 // present thread: the cadence line and
 bool command(const char* cmd, const char* args);   // the `lua` word
 void status(d2vr::status::Writer& w);    // the status.json "lua" object
 bool on();                               // the three wraps are live
+void set_on(bool on);                    // the `lua on|off` word's body (present thread)
+// The counters the F10 panel shows (a snapshot; the tick line is the record).
+struct Counters {
+    unsigned long thread, foreignResumes, resumeHits, luaResumeHits, lgMatch, lgMismatch;
+    unsigned long pcallEngine, pcallOwn, chunksDone, chunksFailed;
+    double resumeHz; bool poisoned; const char* slot;
+};
+Counters counters();
 // Queue one chunk (present thread). False when the lane is off, poisoned or busy.
 // `tag` names it in the log. The chunk should `return` a string: it is logged.
 bool run(const char* text, const char* tag);

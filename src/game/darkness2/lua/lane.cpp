@@ -421,6 +421,18 @@ extern "C" void __cdecl d2vr_lua_on_pcall(uintptr_t ret, void* L)
 namespace d2vr::game::lua {
 
 bool on() { return g_wrap[kResume].on && g_wrap[kLuaResume].on && g_wrap[kPCall].on; }
+void set_on(bool on) { set(on); }
+Counters counters()
+{
+    Counters c;
+    c.thread = (unsigned long)g_resumeThread; c.foreignResumes = (unsigned long)g_foreignResumes;
+    c.resumeHits = (unsigned long)g_hits[kResume]; c.luaResumeHits = (unsigned long)g_hits[kLuaResume];
+    c.lgMatch = (unsigned long)g_lgMatch; c.lgMismatch = (unsigned long)g_lgMismatch;
+    c.pcallEngine = (unsigned long)g_pcallEngine; c.pcallOwn = (unsigned long)g_pcallOwn;
+    c.chunksDone = (unsigned long)g_chunksDone; c.chunksFailed = (unsigned long)g_chunksFailed;
+    c.resumeHz = g_wrap[kResume].hz; c.poisoned = g_poisoned != 0; c.slot = mail_name(g_mail);
+    return c;
+}
 uint32_t chunks_done() { return (uint32_t)g_chunksDone; }
 uint32_t chunks_failed() { return (uint32_t)g_chunksFailed; }
 const char* last_result() { return g_result; }

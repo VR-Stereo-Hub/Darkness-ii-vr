@@ -15,7 +15,7 @@ namespace {
 
 const char* const kCatNames[(int)Cat::COUNT] = {
     "core", "proxy", "cfg", "d3d", "present", "hooks", "canary", "cmd", "status", "crash", "input",
-    "capture", "game", "xr", "sim", "openxr", "xrinput", "perf", "stereo", "lua",
+    "capture", "game", "xr", "sim", "openxr", "xrinput", "perf", "stereo", "lua", "overlay", "camera",
 };
 const char* const kLevelNames[] = { "error", "warn", "info", "debug", "trace" };
 const char kLevelLetters[] = { 'E', 'W', 'I', 'D', 'T' };

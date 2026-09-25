@@ -23,6 +23,11 @@ struct Config {
     int  canaryLogHz = 1;        // [Canary] LogEverySeconds: the hits/s + re-read line cadence
     // [Lua]: R2's in-game half, the three wraps and the chunk runner. Default OFF.
     int  luaEnabled = 0;
+    // [Overlay]: the F10 panel. Enabled arms the key; the panel itself stays hidden until pressed.
+    int   overlayEnabled = 1;
+    float overlayUiScale = 0.0f;   // 0 = from the eye height
+    // [Camera]: the projection watch (the SS_Projection readback). Default OFF.
+    int   cameraProjWatch = 0;
     // [VR]: the OpenXR runtime layer (core/vr/openxr_runtime, adopted from Dishonored).
     char  vrRuntime[16] = "auto";          // auto|native|steamvr
     char  vrRuntimeJson[MAX_PATH] = "";    // a manifest for this launch (the simulator; a Steam launch)

@@ -30,8 +30,9 @@ The short version:
 3. Validate in the simulator (`tools\xrsim-*`, once it exists) before asking anyone for a
    headset run.
 4. Open the PR **against `staging`** (`gh pr create --base staging`) with `Fixes VR-<n>` as
-   the first line of the body, and fill in the template.
-5. Merge to `staging` once the maintainer says so. Linear marks the ticket Done.
+   the first line of the body, fill in the template, then move the ticket to In Review in
+   Linear with the PR link attached (agents do this through the Linear MCP).
+5. Merge to `staging` once the maintainer says so, then move the ticket to Done.
 6. Update `docs/STATUS.md`, tick `docs/ROADMAP.md`, push.
 
 `main` is the release branch: its tip is always the latest tag on the Releases page, and

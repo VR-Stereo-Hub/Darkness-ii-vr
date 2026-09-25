@@ -151,6 +151,18 @@ per-key migrations with markers and no version bump. Data dir `%LOCALAPPDATA%\Da
 (`D2VR_DATA_DIR` overrides): `command.txt`, `ack.txt`, `status.json`, `dumps\`, `xrsim\`. Logs
 next to the exe, ten sessions deep. The game's own config is never written.
 
+## Code structure (planned; the Dishonored layout)
+
+The directory contract, in full in `CLAUDE.md` "Repo map": `src/proxy/` (the DLL the game
+loads, `DllMain` and the exports), `src/core/` (engine-agnostic: `util/`, `hooks/`,
+`framework/`, `gfx/`, `vr/`, `input/`, `ui/`, `config/`), `src/game/darkness2/` (everything
+that knows an address or an engine layout: `patterns.h`, `lua/`, camera, head tracking,
+present_tick, anim, models, hands, weapons, tentacles, the gameswf HUD, game state, the seam's
+game words), `src/legacy/`, `src/tools/` (`xrsim/`, `ovrshim/`, `installer/`, `xr_hello32/`),
+`third_party/`, `tools/` (the PowerShell harness and `cache/`), `tests/golden/`, `docs/`. The
+one rule that keeps it honest: nothing in `core/` includes anything from `game/`, and every
+engine address lives in `patterns.h`.
+
 ## The unity build and how a module leaves it (planned)
 
 Dishonored started as one 23k-line file and split it module by module; the rule was that a

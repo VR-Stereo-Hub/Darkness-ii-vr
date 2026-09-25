@@ -76,9 +76,9 @@ every status belongs to exactly one. The team's set, shared with every mod in th
 |---|---|---|
 | **Backlog** | backlog | Accepted and real, not scheduled. **This is the inbox**: anyone files straight here |
 | **Todo** | unstarted | Scheduled for the current milestone. The next thing someone picks up |
-| **In Progress** | started | A branch exists. Linear sets this automatically when the PR opens |
-| **In Review** | started | The PR is ready to read, with its simulator results and its headset run already in the body |
-| **Done** | completed | Merged to `staging` and its pass criteria measured. Not yet in anyone's hands |
+| **In Progress** | started | A branch exists. The session sets it through the Linear MCP when it picks the ticket up |
+| **In Review** | started | The PR is open and ready to read, with its simulator results and its headset run already in the body. The session sets it and attaches the PR link when it opens the PR |
+| **Done** | completed | Merged to `staging` and its pass criteria measured. Not yet in anyone's hands. The session (or the user) sets it right after the merge |
 | **Released** | completed | Carried into `main` by a release PR and shipped as a tagged build on the GitHub Releases page |
 | **Canceled** | canceled | Not doing it. The comment says why |
 | **Duplicate** | duplicate | System-managed by Linear |
@@ -91,6 +91,15 @@ rejected on Dishonored:
   the state would never be occupied. The headset run happens **before** review ends and its
   result goes in the PR body. Where acceptance is purely perceptual, the ticket carries
   `needs-headset` and the work of judging it *is* the ticket.
+
+**Status moves are made by hand, through the Linear MCP, by the session doing the work.** This
+project does not rely on Linear's GitHub App automations (the org has only the code-access app
+installed, and the user chose not to depend on the other). The `Fixes VR-<n>` line in the PR body
+stays: it is the human-readable link and it will start working the day the app is installed. What
+the session does, every time: In Progress when it picks the ticket up; In Review plus the PR URL
+attached (`save_issue` with `links`) when it opens the PR; Done after the user has merged, and the
+measurements and the verdict as a comment on the ticket. A PR that is open while its ticket still
+reads Backlog is a session that forgot.
 
 `Done` and `Released` are separate because they answer different questions. `Done` means the
 code is on `staging`. `Released` means a person can install it: the release PR has carried
@@ -278,8 +287,8 @@ Then fill in `.github/PULL_REQUEST_TEMPLATE.md`. The contract it encodes:
 
 ### 5. Review
 
-Opening the PR moves the ticket to **In Progress** automatically. Requesting review moves it to
-**In Review**. (Both need the automation rows below and the `linear` GitHub App installed.)
+When the PR opens, the session moves the ticket to **In Review** through the MCP and attaches
+the PR URL to it. Nothing here is automatic; the check that it happened is part of review.
 
 The reviewer's job is not to re-derive the change. It is to ask:
 
@@ -297,8 +306,10 @@ the ticket outlives the branch and someone will look for them in six months.
 
 Merge to `staging`, **with the user's explicit permission, every time**. A passing build, a
 finished feature or a kind word about the work is not permission; only the user saying to merge
-it is. Linear moves the ticket to **Done**. Delete the branch. `main` is not touched here: it
-moves only in the release ritual below.
+it is. Then the session moves the ticket to **Done** through the MCP (the user may do it
+themselves when they merge from the GitHub UI; either way it is checked at the next session
+START). Delete the branch. `main` is not touched here: it moves only in the release ritual
+below.
 
 Then the session-end ritual from `CLAUDE.md`: rewrite "Current state" and "Next steps" in
 `docs/STATUS.md`, append a dated session log entry, tick `docs/ROADMAP.md` boxes, add a dated
@@ -499,10 +510,13 @@ a bug in a script.
 Issue templates are also UI-only, but this project does not use one on purpose: the ticket
 template above is the version of record and lives here.
 
-### Linear installs two separate GitHub Apps, and you need both
+### The GitHub App is optional here: status moves go through the MCP
 
-This cost Dishonored a session's worth of confusion, and on 2026-09-25 the check below showed
-the org still has only one of them. Linear has:
+On 2026-09-25 the user decided this project does not depend on Linear's GitHub App
+automations: every status move is made by the session through the Linear MCP (see
+"Statuses"). The rest of this section is kept because it explains why `Fixes VR-<n>` does not
+link today, and what to do if the app is ever installed. It cost Dishonored a session's worth
+of confusion. Linear has:
 
 - **`linear-code`**: code access. Powers the Reviews surface, diffs, file contents, title and
   state sync, and coding sessions.
@@ -527,7 +541,8 @@ description (adding and removing a character is enough) to fire a fresh webhook,
 the link appears on the issue. `list_diffs` on the MCP shows `linkedIssues` per PR; empty
 before, non-empty after, is the proof.
 
-The automation rows this project wants (team VR, so they apply to every mod repo):
+If the app is installed one day, these are the automation rows to set (team VR, so they apply
+to every mod repo). Until then the session does the same moves by hand:
 
 | Row | Value |
 |---|---|
@@ -550,9 +565,10 @@ already Done and go to Released by hand in the release ritual.
 3. Work. Simulator first. Headset last. ENGINE_NOTES in the same commit.
 4. PR base: staging (gh pr create --base staging). Body line 1: "Fixes VR-<n>" into
    staging, "Ref VR-<n>" into a working branch. Title: a conventional-commit subject.
+   Then, through the MCP: ticket -> In Review, PR URL attached.
 5. Fill the PR template. Evidence, levers and defaults, blast radius,
-   what is deliberately not here, testing.
-6. Review, then merge to staging WITH THE USER'S YES. Linear marks it Done.
+   what is deliberately not here, testing. Measurements and verdicts on the ticket.
+6. Review, then merge to staging WITH THE USER'S YES. Then, through the MCP: ticket -> Done.
 7. STATUS, ROADMAP boxes, decision log, push. Batch project update if several closed.
 8. Release only when the user says so: release PR staging -> main (the user merges),
    tag the main tip, publish. Then Done -> Released, milestone closed.

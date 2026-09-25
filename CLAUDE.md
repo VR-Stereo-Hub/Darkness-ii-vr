@@ -206,9 +206,10 @@ Extensive does not mean noisy. The rules that buy volume without cost:
   moves a mesh: `docs/darkness2/ANIM_AND_MODEL_CONTROL.md`. Adding any feature:
   `docs/FEATURE_PROCESS.md`.
 - **START**: read `docs/STATUS.md`, the current milestone in `docs/ROADMAP.md`, then
-  `git log --oneline -10`. **Find the Linear ticket** for the work (search before creating;
-  create from the template if absent, with project, milestone, priority and a `Type` label),
-  move it to In Progress and branch `<owner>/vr-<n>-<slug>` off `staging`. Touching engine
+  `git log --oneline -10`. If the previous session's PR has been merged since, move its ticket
+  to Done through the MCP if nobody has. **Find the Linear ticket** for the work (search before
+  creating; create from the template if absent, with project, milestone, priority and a `Type`
+  label), move it to In Progress and branch `<owner>/vr-<n>-<slug>` off `staging`. Touching engine
   internals? Read ENGINE_NOTES first; new findings go there in the same commit as the code.
 - **Validate in the SIMULATOR before asking for a headset**, once it exists (M1). Perceptual
   questions (comfort, judder, world scale, warp, whether the tentacles feel like yours) still
@@ -221,8 +222,10 @@ Extensive does not mean noisy. The rules that buy volume without cost:
 - **END**: rewrite "Current state" and "Next steps" in `docs/STATUS.md`, append a dated session
   log entry, tick `docs/ROADMAP.md` boxes, commit, push. A session that ends without pushing
   STATUS.md is a failed handoff. Open the PR against `staging` with `Fixes VR-<n>` as the
-  body's first line and fill in `.github/PULL_REQUEST_TEMPLATE.md`; merging to `staging` moves
-  the ticket to Done (`Released` comes with the release PR into `main` and the tag). Put
+  body's first line and fill in `.github/PULL_REQUEST_TEMPLATE.md`. **Then move the ticket
+  yourself through the Linear MCP**: In Review with the PR URL attached when the PR opens; Done
+  after the user has merged (`Released` comes with the release PR into `main` and the tag).
+  Nothing in Linear moves automatically here; the GitHub App automations are not used. Put
   measurements and verdicts on the TICKET, not only the PR; the ticket outlives the branch.
   File a ticket for every fault found and deliberately not fixed, and name it in the PR's
   "what is deliberately not here". If a group of tickets closed, post one batch project

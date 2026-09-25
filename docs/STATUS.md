@@ -20,9 +20,9 @@ handoff.
 - **The tentacle verdict**: the assets are good enough for VR; the risks are anchoring (the
   arms hang off the camera bone), keyframed motion (the mod supplies the dynamics), and
   possible flat-only geometry. All three are M3 tickets.
-- **Two things only the user can do** are on the UI checklist below: install the `linear`
-  GitHub App on the org (only `linear-code` is installed, so `Fixes VR-n` does nothing yet)
-  and set the PR automation rows.
+- **Ticket status moves are made by the session through the Linear MCP** (In Review with the
+  PR attached when a PR opens; Done after the user merges). The user decided not to depend on
+  Linear's GitHub App automations; `docs/LINEAR_AND_GITHUB.md` "Statuses" has the rule.
 
 ## Next steps (in order)
 
@@ -39,8 +39,9 @@ handoff.
 ## Found and not fixed
 
 - The Linear org has only the `linear-code` GitHub App installed; magic-word linking is dead
-  for every repo in the org (Dishonored's PRs all show `linkedIssues: []`). UI checklist item;
-  not a code fault.
+  for every repo in the org (Dishonored's PRs all show `linkedIssues: []`). By the user's
+  decision this project does not depend on it: status moves go through the MCP. Optional to
+  fix; not a code fault.
 - The Linear workspace agent guidance (org-wide) contradicts itself on branch naming
   (Dishonored's copy). A corrected block is in `docs/LINEAR_AND_GITHUB.md`; pasting it is the
   user's.
@@ -51,19 +52,13 @@ None. The research gate can start.
 
 ## The user's UI checklist (Linear settings the MCP cannot reach)
 
-1. Install the `linear` GitHub App on the `VR-Stereo-Hub` org (Linear Settings > Integrations
-   > GitHub > connect), accept on GitHub, then confirm with
-   `gh api orgs/VR-Stereo-Hub/installations --jq '.installations[].app_slug'` that both
-   `linear` and `linear-code` appear. Re-save one PR body afterwards to fire a webhook and
-   check `linkedIssues` is no longer empty.
-2. Team VR > Issue statuses and automations: PR opened -> In Progress; review requested ->
-   In Review; PR merged -> Done **restricted to base `staging`**; any other base (including
-   `main`) -> no action. (The Dishonored copy of this rule needs the same change once its
-   vr-218 branch lands.)
-3. Settings > Agents > Additional guidance: paste the corrected block from
+1. Settings > Agents > Additional guidance: paste the corrected block from
    `docs/LINEAR_AND_GITHUB.md` "The workspace agent guidance".
-4. Optional: branch protection on `main` (PRs only, no direct push), so nothing but a release
+2. Optional: branch protection on `main` (PRs only, no direct push), so nothing but a release
    PR can move it.
+3. Optional, decided against for now: the `linear` GitHub App and the PR automation rows
+   (`docs/LINEAR_AND_GITHUB.md` "The GitHub App is optional here"). Status moves are made
+   through the MCP instead.
 
 ---
 

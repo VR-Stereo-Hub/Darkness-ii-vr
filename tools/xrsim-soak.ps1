@@ -10,7 +10,8 @@
 #   PASS when  submits/presents >= -MinRatio over the whole window (every present
 #              handed the runtime a texture), the sim's layeredFrames grew by the
 #              same count, every capture had both eyes >= -MinNonBlack percent
-#              non-black, the session stayed FOCUSED, and the mod log written
+#              non-black and agreeing within -MaxEyeDelta points (the same frame
+#              in both eyes), the session stayed FOCUSED, and the mod log written
 #              during the window has no SUBMISSION IDLE, EXCEPTION, POISONED or
 #              canary REVERTED line.
 # The game must already be running on the simulator (xrsim-launch.ps1 -ViaSteam)
@@ -23,7 +24,11 @@ param(
     [int]$SampleSeconds = 10,
     [int]$ShotEveryMinutes = 1,
     [double]$MinRatio = 0.98,
-    [double]$MinNonBlack = 10,
+    # This game is dark: the idle camera on the night sky composites 5 percent non-black
+    # in both eyes and is a real frame. The floor catches a BLACK eye; the L/R agreement
+    # (within -MaxEyeDelta points) catches one eye getting a different frame.
+    [double]$MinNonBlack = 2,
+    [double]$MaxEyeDelta = 0.5,
     [string]$Dir = "",
     [string]$GamePath = "",
     [string]$OutDir = ""
@@ -87,7 +92,7 @@ while ((Get-Date) -lt $deadline) {
     $rows += $row
     Write-Host ("  {0,4}s presents +{1,-6} submits +{2,-6} sim layered +{3,-6} {4,5} Hz {5,-12} cap {6} {7} us" -f
         $row.t, $row.presents, $row.submits, $row.simLayered, $row.hz, $row.session, $row.capMode, $row.capUs)
-    if ($row.session -ne "FOCUSED") { $fails += "session left FOCUSED at ${($row.t)}s: $($row.session)" }
+    if ($row.session -ne "FOCUSED") { $fails += "session left FOCUSED at $($row.t)s: $($row.session)" }
     if ($row.poisoned -eq $true) { $fails += "the VR work was POISONED at $($row.t)s (an exception on the present path)" }
     if ((Get-Date) -ge $nextShot) {
         $nextShot = $nextShot.AddMinutes($ShotEveryMinutes)
@@ -100,6 +105,7 @@ while ((Get-Date) -lt $deadline) {
             if ([double]$sr.nonBlackL -lt $MinNonBlack) { $fails += "capture ${tag}: LEFT eye $($sr.nonBlackL)% non-black (< $MinNonBlack)" }
             if ([double]$sr.nonBlackR -lt $MinNonBlack) { $fails += "capture ${tag}: RIGHT eye $($sr.nonBlackR)% non-black (< $MinNonBlack)" }
             if ([int]$sr.quads -lt 1) { $fails += "capture ${tag}: no quad layer" }
+            if ([math]::Abs([double]$sr.nonBlackL - [double]$sr.nonBlackR) -gt $MaxEyeDelta) { $fails += "capture ${tag}: the eyes disagree (L $($sr.nonBlackL)% vs R $($sr.nonBlackR)% non-black, > $MaxEyeDelta)" }
         } catch { $fails += "capture ${tag} failed: $_" }
     }
 }
@@ -108,7 +114,7 @@ $last = $rows[-1]
 $ratio = if ($last.presents -gt 0) { [math]::Round($last.submits / $last.presents, 3) } else { 0 }
 $simRatio = if ($last.submits -gt 0) { [math]::Round($last.simLayered / $last.submits, 3) } else { 0 }
 if ($ratio -lt $MinRatio) { $fails += "submits/presents = $ratio over the window (< $MinRatio): presents that handed the runtime nothing" }
-if ($simRatio -lt $MinRatio -or $simRatio -gt (2 - $MinRatio)) { $fails += "the sim's layeredFrames/submits = $simRatio: the simulator did not see one layered frame per submit" }
+if ($simRatio -lt $MinRatio -or $simRatio -gt (2 - $MinRatio)) { $fails += "the sim's layeredFrames/submits = ${simRatio}: the simulator did not see one layered frame per submit" }
 $text = Read-LogSince $logMark
 foreach ($rx in @('SUBMISSION IDLE', 'EXCEPTION', 'POISONED', 'REVERTED to the original', 'CHANGED to something else')) {
     $m = [regex]::Matches($text, "(?m)^.*$rx.*$")

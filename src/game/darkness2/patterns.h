@@ -66,4 +66,54 @@ constexpr uintptr_t kEndSceneWrapperFn  = 0x00654FA0;
 constexpr uintptr_t kEndSceneReturn     = 0x00654FB1;
 constexpr uintptr_t kHotSite            = kPresentWrapperFn;
 
+// --- R2: the engine's Lua 5.1.3 (ENGINE_NOTES s3, s8 "Lua") ---------------------
+// Derived offline on 2026-09-25 from the 5.1.3 library strings and the SWIG
+// wrappers' call shapes. Every entry is cdecl with a plain `ret` unless noted;
+// lua_Number is FLOAT here (TValue is 8 bytes: lua_gettop shifts by 3). The
+// prefixes are what a caller byte-verifies before the first call; the detour
+// lengths are for the wraps the Lua lane installs (default OFF, present tick).
+constexpr uintptr_t kLuaStateHolder    = 0x010DD9C4;   // *(lua_State**): the main state (written at 0x92DA25 from lua_newstate)
+constexpr uintptr_t kScriptSystem      = 0x010DDAD8;   // the ScriptSystem singleton (getter 0xC84CA0); +8 also holds the state
+constexpr uintptr_t kScriptResumeFn    = 0x00C51FA0;   // ScriptSystem::Resume, thiscall ret 4: the only engine caller of lua_resume (79 callers)
+constexpr uint8_t   kScriptResumePrefix[] = { 0x83, 0xEC, 0x7C, 0x53, 0x55, 0x8B, 0xE9, 0x8B, 0x8C, 0x24, 0x88, 0x00, 0x00, 0x00 };
+constexpr size_t    kScriptResumeDetourLen = 5;        // sub esp,7Ch ; push ebx ; push ebp
+constexpr uintptr_t kLuaResume         = 0x00B72770;   // lua_resume(L, narg)
+constexpr uint8_t   kLuaResumePrefix[] = { 0x56, 0x8B, 0x74, 0x24, 0x08, 0x8A, 0x46, 0x06, 0x3C, 0x01 };
+constexpr size_t    kLuaResumeDetourLen = 5;           // push esi ; mov esi,[esp+8]
+constexpr uintptr_t kLuaPCall          = 0x00772F10;   // lua_pcall(L, nargs, nresults, errfunc); 6 static callers, all init/debug
+constexpr uint8_t   kLuaPCallPrefix[]  = { 0x8B, 0x4C, 0x24, 0x10, 0x83, 0xEC, 0x08, 0x56, 0x8B, 0x74, 0x24, 0x10 };
+constexpr size_t    kLuaPCallDetourLen = 7;            // mov ecx,[esp+10h] ; sub esp,8
+constexpr uintptr_t kLuaLLoadBuffer    = 0x00AF8F40;   // luaL_loadbuffer(L, buff, sz, name)
+constexpr uint8_t   kLuaLLoadBufferPrefix[] = { 0x83, 0xEC, 0x08, 0x8B, 0x44, 0x24, 0x10, 0x8B, 0x54, 0x24, 0x18 };
+constexpr uintptr_t kLuaLoad           = 0x00922DE0;   // lua_load; default chunkname "?" at 0xF8E714
+constexpr uintptr_t kLuaGetTop         = 0x00CFFEC0;
+constexpr uint8_t   kLuaGetTopPrefix[] = { 0x8B, 0x4C, 0x24, 0x04, 0x8B, 0x41, 0x08, 0x2B, 0x41, 0x0C, 0xC1, 0xF8, 0x03, 0xC3 };
+constexpr uintptr_t kLuaSetTop         = 0x004D2EF0;
+constexpr uint8_t   kLuaSetTopPrefix[] = { 0x8B, 0x4C, 0x24, 0x08, 0x8B, 0x44, 0x24, 0x04, 0x85, 0xC9, 0x7C, 0x37 };
+constexpr uintptr_t kLuaToLString      = 0x00706A80;
+constexpr uint8_t   kLuaToLStringPrefix[] = { 0x56, 0x8B, 0x74, 0x24, 0x08, 0x57, 0x8B, 0x7C, 0x24, 0x10, 0x85, 0xFF, 0x7E, 0x13 };
+constexpr uintptr_t kLuaType           = 0x0093B370;
+constexpr uint8_t   kLuaTypePrefix[]   = { 0x8B, 0x4C, 0x24, 0x08, 0x85, 0xC9, 0x7E, 0x16, 0x8B, 0x54, 0x24, 0x04 };
+constexpr uintptr_t kLuaPushString     = 0x00AD0BB0;
+constexpr uint8_t   kLuaPushStringPrefix[] = { 0x55, 0x8B, 0x6C, 0x24, 0x0C, 0x85, 0xED, 0x75, 0x10 };
+constexpr uintptr_t kLuaPushNumber     = 0x00AE58D0;   // (L, float)
+constexpr uint8_t   kLuaPushNumberPrefix[] = { 0x8B, 0x44, 0x24, 0x04, 0x8B, 0x48, 0x08, 0xF3, 0x0F, 0x10, 0x44, 0x24, 0x08 };
+constexpr uintptr_t kLuaGetField       = 0x00710020;   // the first 24 bytes equal lua_setfield's: verify by VA, not by prefix alone
+constexpr uintptr_t kLuaSetField       = 0x0080D360;
+constexpr uintptr_t kLuaError          = 0x00517F30;
+// lua_State layout (5.1.3, float numbers, 4 engine bytes BEFORE each state):
+constexpr size_t    kLuaStateTop       = 0x08;
+constexpr size_t    kLuaStateBase      = 0x0C;
+constexpr size_t    kLuaStateGlobal    = 0x10;         // l_G
+constexpr size_t    kLuaStateCi        = 0x14;
+constexpr size_t    kLuaStateBaseCi    = 0x28;
+constexpr size_t    kLuaStateNCcalls   = 0x34;         // u16
+constexpr int       kLuaGlobalsIndex   = -10002;
+constexpr int       kLuaRegistryIndex  = -10000;
+// The SWIG module structs (tools/swig-dump.py, docs/darkness2/swig-api.md):
+// { types, size, next, type_initial, cast_initial, clientdata }; size at +4.
+constexpr uintptr_t kSwigModuleEngine    = 0x010B8F94;   // 127 types, 72 classes
+constexpr uintptr_t kSwigModuleD2Game    = 0x010C5AB4;   // 154 types, 40 classes
+constexpr uintptr_t kSwigCameraControllerBase = 0x010B93D8;   // swig_lua_class; SetBaseFovOverride wrapper 0xDBDB90 -> vtable +0xE4 (float)
+
 } // namespace d2vr::game::pat

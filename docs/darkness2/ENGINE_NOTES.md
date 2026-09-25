@@ -148,6 +148,45 @@ D3D11 texture on the runtime's adapter for OpenXR, exactly the Dishonored arrang
   in the whole project. `luaL_loadbuffer`, `lua_pcall` and friends are findable by their
   standard 5.1.3 strings.
 
+**Measured offline for R2 (VR-233, 2026-09-25; the addresses are in s8 and `patterns.h`):**
+
+- **The VM.** One main `lua_State`, created by `lua_newstate` at startup and stored in a
+  static holder (`*(lua_State**)0x10DD9C4`, written at 0x92DA25; the `ScriptSystem`
+  singleton at 0x10DDAD8 keeps a second copy at +8). `lua_Number` is **float**, not double:
+  `TValue` is 8 bytes (`lua_gettop` shifts by 3), `lua_pushnumber` loads with `movss`. Four
+  engine bytes sit BEFORE each state (`L-4`, the engine's script-thread object; 0 on the main
+  state), which is how `Sleep` decides whether it may yield. The engine installs its own panic
+  handler (0xD502E0), so the stock `PANIC: unprotected error` string is absent. Pseudo-indices
+  are stock (`LUA_GLOBALSINDEX` = -10002).
+- **How scripts run.** Every shipped callback (`Initialize`, `Start`, `Update`, `On*`) runs as
+  a coroutine through `ScriptSystem::Resume` (0xC51FA0, thiscall, 79 static callers), the only
+  engine caller of `lua_resume` (0xB72770). `lua_pcall` (0x772F10) has **six** static callers,
+  all at VM creation (the `Installed CheckGlobal` chunk in `ScriptSystem::Init`, 0x6DE010) or in
+  debug paths, and none of the 430 shipped scripts calls `pcall`/`xpcall`. A wrap on
+  `lua_pcall` therefore catches NOTHING during play: the engine's per-tick script entry is
+  `ScriptSystem::Resume`, and the state pointer comes from the holder. The mod's Lua lane is
+  designed on that (`docs/ARCHITECTURE.md` "The Lua lane"): the `lua_pcall` wrap stays as the
+  negative control whose count must read 0.
+- **The bindings are real SWIG 1.3** (`swig_runtime_data_type_pointer4`, custom error strings
+  `SWIG_check_num_args`, `SWIG_fail_arg`, `SWIG_fail_ptr`): ten `luaopen_` modules (Engine,
+  GraphicsRes, Effects, Game, Sound, Npc, UISys, Script, Framework, D2_Game), **177 classes,
+  1143 methods, 208 attributes** plus the Script module's 44 globals (`IsNull`, `Lerp`,
+  `Broadcast`, ...). The runtime `types` arrays live in BSS; the static `type_initial` arrays
+  are what `tools/swig-dump.py` walks. The whole map with wrapper addresses is
+  `docs/darkness2/swig-api.md`.
+- **The FOV route the shipped script uses** (`/D2/Scripts/Player/SetFov.lua`):
+  `gRegion:GetHumanPlayers()` -> `[1]:GetAvatar()` -> `:CameraControl()` (BaseAvatar, the
+  avatar's vtable +0x318) -> `IsNull(c) or c:IsNullCameraController()` -> `c:SetBaseFovOverride(f)`.
+  The wrapper (0xDBDB90) converts the object through its swig type, reads the float with
+  `lua_tonumber` and calls the camera controller's **vtable +0xE4** with one float: a native
+  route that bypasses script entirely once the controller pointer is known. `gRegion` exists
+  only once a level is loaded; `Sleep` yields and must never be called from a chunk run on
+  the main state.
+- **Thread strings**: no `RenderThread`/`GameThread`/`MainThread`; the engine names
+  `GraphicsWorker` (a `mGraphicsWorkerType` setting), `JobMgr`/`JobWorker`, `CacheThreadImpl`,
+  `DefragWorker`. Whether the pump thread is the present thread is still a runtime measurement
+  (s2: PresentEx is on the main thread; the pump canary counts once per present).
+
 ### UI: gameswf (not Scaleform)
 
 - "Compile gameswf with TU_ENABLE_NETWORK=1...", `/EE/Types/UISys/FlashMgrImpl`,
@@ -344,6 +383,14 @@ date and the build. All entries below: build 2012-03-20 (TimeDateStamp 0x4F68A87
 | `kPumpCallSite` -> `kPumpCallTarget` | 0xB2E6E9 -> 0x924B80 | `E8 92 64 DF FF` | the last call inside the pump; the target reads and decrements a global counter (0x10E2130) and returns it (17 static callers). The call-site canary rewrites the rel32 |
 | `kPresentWrapperFn` | 0x920EE0 | `55 56 57 8B F9 E8 B6 B1 B6 FF` | **live**: `PresentEx` returned into the exe at 0x920F2E on the first frame of both runs; the function begins after int3 padding at 0x920EE0 and calls device vtable slot 0x1E4/4 = 121 (`PresentEx`) with `(0,0,0,0,flags)`. 1 E8 caller (0xB36EF2). Detour length 5 |
 | `kEndSceneWrapperFn` | 0x654FA0 | `8B 81 64 29 00 00 8B 08` | **live**: `EndScene` returned into the exe at 0x654FB1; a 17-byte thunk `mov eax,[ecx+0x2964] ; mov ecx,[eax] ; mov edx,[ecx+0xA8] ; push eax ; call edx ; ret`. 0 E8 callers, 1 `.rdata` reference (virtual). Alternative hot site; not hooked |
+| `kLuaStateHolder` | 0x10DD9C4 | data | xref of the `lua_newstate` (0x8CED10) result: `mov [esi+4],eax` at 0x92DA25 with esi = the holder object at 0x10DD9C0 (its getter 0xAF02E0 zeroes +4 and +8 first); `ScriptSystem+8` (0x10DDAE0) holds a copy |
+| `kScriptResumeFn` | 0xC51FA0 | `83 EC 7C 53 55 8B E9 8B 8C 24 88 00 00 00` | the enclosing function of the only `E8` call to `lua_resume` (0xB72770, at 0xC52095); thiscall, `ret 4`, 79 static callers; the argument at `[esp+4]` is the engine's script-thread object, the state passed to `lua_resume` is derived from it (+0x14 through 0xD50D40). Detour length 5 (`sub esp,7Ch ; push ebx ; push ebp`) |
+| `kLuaResume` | 0xB72770 | `56 8B 74 24 08 8A 46 06 3C 01` | references `cannot resume non-suspended coroutine` and `C stack overflow`; the 5.1.3 `lua_resume` shape (status byte at L+6, `ci == base_ci` check at +0x14/+0x28). Detour length 5 |
+| `kLuaPCall` | 0x772F10 | `8B 4C 24 10 83 EC 08 56 8B 74 24 10` | calls `luaD_pcall` (0x673160, which references `not enough memory` / `error in error handling` through `luaD_seterrorobj` 0xB504C0) with `f_call` 0xD5A6C0, then the `nresults == -1` adjust; 6 static callers (`ScriptSystem::Init` 0x6DE010, the debug paths, the `pcall` base function). Detour length 7 |
+| `kLuaLLoadBuffer` | 0xAF8F40 | `83 EC 08 8B 44 24 10 8B 54 24 18` | pushes the `getS` reader (0xD5A7F0) and calls `lua_load` (0x922DE0, default chunkname `?` at 0xF8E714); called by `db_debug` with `=(debug command)` |
+| `kLuaGetTop` / `kLuaSetTop` | 0xCFFEC0 / 0x4D2EF0 | `8B 4C 24 04 8B 41 08 2B 41 0C C1 F8 03 C3` / `8B 4C 24 08 8B 44 24 04 85 C9 7C 37` | `(top - base) >> 3` (an 8-byte TValue: float numbers); `lua_settop` is called as `lua_pop` at the end of every `SWIG_init`. `lua_gettop` is the first call of every SWIG wrapper |
+| `kLuaToLString`, `kLuaType`, `kLuaPushString`, `kLuaPushNumber`, `kLuaGetField`, `kLuaSetField`, `kLuaError` | 0x706A80, 0x93B370, 0xAD0BB0, 0xAE58D0, 0x710020, 0x80D360, 0x517F30 | s8 `patterns.h` | from the SWIG wrappers' and the base library's call shapes (`lua_pushstring` pushes `"swig_type"` in every `SWIG_init`; `lua_setfield(L, GLOBALSINDEX, "INF")` in the engine's library opener 0xD50AF0; `lua_error` calls `luaG_errormsg` 0xD165B0). `lua_getfield` and `lua_setfield` share their first 24 bytes: verify by VA |
+| The SWIG modules | s3, `swig-api.md` | data | each `SWIG_init` pushes `"swig_type"` (0xF35F4C) and `"swig_equals"` (0xFAEB9C) and passes its `swig_module_info` to 0xD8C3D0; the static `type_initial` arrays sit beside the module structs. Layouts: `swig_type_info` 24 bytes, `swig_lua_class` 32 bytes, methods `luaL_Reg` 8 bytes, attributes 12 bytes |
 | `kSetDllDirectoryCall` (documented, not in patterns.h) | 0x452640 | - | xref of the string `SetDllDirectoryA` (0xF1A254): `GetProcAddress(kernel32, "SetDllDirectoryA")` then a call with the caller's string. Live: at our DllMain `GetDllDirectory` returned `<game dir>\/Tools/PhysX/x86/`, so it runs before the D3D9 load and points at the PhysX folder |
 
 ## 9. R0 verdict: the loading route (VR-231, 2026-09-25)
@@ -409,3 +456,29 @@ site ever reverts, the per-second line names the tick and the bytes.
 **Rule for the mod**: engine code hooks install from the present thread once the game is up
 (the framework's `present_tick`), byte-verified, default OFF, with the 1 Hz re-read left on in
 every build so a regression shows up as a `REVERTED` line, not a silent exit.
+
+## 11. The runtime layer on this host (VR-241, 2026-09-25)
+
+The Dishonored runtime layer (`core/vr/openxr_runtime`, verbatim behind the rename in
+`docs/ARCHITECTURE.md`) came up on this game at the first launch that carried it. Measured on
+the simulator (launch 3 of the R0 count; log build 31de821-dirty):
+
+| Measurement | Result |
+|---|---|
+| The launch route for the simulator | **A direct `DarknessII.exe` start refuses**: a modal `Error` box, `Failed to initialize Steam. Make sure the Steam client is running and try again.`, with the Steam client running, BEFORE `d3d9` is asked for (no log line at all). The exe's `steam_api` needs the Steam-launched context. `xrsim-launch.ps1 -ViaSteam` is the only simulator route: the manifest travels in `[VR] XrRuntimeJson`, the layer sets `XR_RUNTIME_JSON` for the process and the loader property, and the launcher restores the ini once the runtime line appears |
+| Implicit API layers | one registered, `XR_APILAYER_VIRTUALDESKTOP_oculus_compatibility` (HKLM 64-bit view, x64 DLL): the guard opted this process out through its own `DISABLE_...` variable. Registry untouched |
+| Instance / system | `d2vr-xrsim` 1.0.0; `Meta Quest 3`, 2064x2208 per eye recommended, 16 layers |
+| The D3D11 device | on `NVIDIA GeForce RTX 4060` LUID `00000000-0000CE56`, MATCHES the LUID the runtime asked for (the game's own 9Ex adapter 0 reports the same LUID); feature level 0xB000 |
+| Session | IDLE -> READY -> SYNCHRONIZED -> VISIBLE -> FOCUSED about 200 ms after the first present; `xr: pipeline READY` |
+| Pacing | the pace thread is ON by the layer's default (`xr: pace thread started`); the runtime period 11.11 ms (90 Hz); the game presents 57-60/s in the alley (its own IMMEDIATE pacing), so the `stereo: rate` line says UNDER-SUBMITTING 0.60-0.66x every window: display slots go unfilled because the game is slower than the display, which is expected on the mono screen and not a stall |
+| Swapchains | a pair at the game's 2560x1440, format 29 (`R8G8B8A8_UNORM_SRGB`, the layer's first preference; the sim offers it), 3 images each |
+| The frame texture | the mono method's `R8G8B8A8_UNORM` 2560x1440 texture from the capture's `B8G8R8A8` (X8R8G8B8 = D3D9 format 22 uploads byte-for-byte) |
+| The quad | 2.4 m x 1.35 m at 1.75 m in VIEW space; in the sim's 1032x1104 eye it covers 58.6% x 27.0% in BOTH eyes (`bboxPctL == bboxPctR`), offset 197 px between the eyes (the parallax of one quad seen from two eyes); the bbox does not move under 0/10/25/45 degrees of head yaw (`headlook.xrs`) |
+| Capture cost, `deferred` | 3.5-5.6 ms per present at 2560x1440: rtd 1 us, lock 0, copy 1.1-1.4 ms, upload 2.4-4.2 ms, blit 1 us; 14.1 MB each way; the readback waits on the previous present's copy |
+| Capture probe | `IDirect3DDevice9Ex` confirmed at runtime; `CreateRenderTarget` with a shared handle OK; the shared surface opens on D3D11 as format 88 (`B8G8R8X8_UNORM`): `[Capture] Mode=shared` is available on this device |
+| Both eyes at the game's rate | see the soak row added below |
+
+**Rules this fixes.** The simulator is reached through Steam only (TRAPS s12). The game's own
+9Ex device is what the shared capture shares: `[Device] Ex` here means "the shared path is
+permitted", never "create as Ex" (ARCHITECTURE decision log). The 64-bit VDXR compatibility
+layer is opted out per process on every launch; its log line is expected.

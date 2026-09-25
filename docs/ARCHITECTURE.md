@@ -86,14 +86,39 @@ scene twice engine-side with its own convergence and separation, that is a fourt
 candidate with the projection already per-eye. If it hands stereo to the driver, it is
 irrelevant.
 
-## The runtime layer (planned; adopted verbatim)
+## The runtime layer (adopted verbatim, VR-241)
 
 `core/vr/openxr_runtime` and `openxr_input` from Dishonored, which took them from BioShock.
 OpenXR only, `XR_KHR_D3D11_enable`, the static Khronos loader linked in, a D3D11 device
-created on the adapter LUID the runtime names (`D3D_DRIVER_TYPE_UNKNOWN`). Runtime
-selection: VDXR, any native 32-bit runtime, or the OpenXR-on-OpenVR shim for SteamVR. The
-64-bit implicit API layer guard (OBS) comes with it. Two host seams only: the device
-provider and the frame texture. Everything else stays byte-identical so fixes port.
+created on the adapter LUID the runtime names (`D3D_DRIVER_TYPE_UNKNOWN`,
+`core/gfx/d3d11_device`). Runtime selection: VDXR, any native 32-bit runtime, or the
+OpenXR-on-OpenVR shim for SteamVR (not adopted yet). The 64-bit implicit API layer guard
+comes with it (`core/vr/apilayer_guard`). Two host seams only: the device provider
+(`d2vr::d3d11::provide`) and the frame texture (`vr::on_present_end(tex)` from the stereo
+seam's `FrameOutput`). Everything else stays byte-identical so fixes port.
+
+**How a fix ports.** The adopted files are the Dishonored `staging` files under one mechanical
+substitution and nothing else: `dvr::` -> `d2vr::`, `namespace dvr` -> `namespace d2vr`,
+`DVR_` -> `D2VR_`, `dishonored-vr` -> `darkness2-vr`, `DishonoredVR` -> `Darkness2VR`,
+`dvr_steamvr32` -> `d2vr_steamvr32`, `dvr_xrsim32` -> `d2vr_xrsim32`, `dvr-xrsim` ->
+`d2vr-xrsim`, `dishonored_vr.ini` -> `darkness2_vr.ini`. A diff against the sibling after the
+same `sed` must be empty for `openxr_runtime.*` and `openxr_input.*`; a host-specific change
+goes behind a compile-time flag, never into the file. The small modules they include
+(`pose_record`, `hud_stub`, `hud_anchor`, `aim_visual`, `bridge_profile`, `diagnostic_ab`,
+`xr_math`, `input_snapshot`, `mono_anchor`, `image_orientation`) are adopted the same way; the
+Dishonored bodies this mod does not have (its profiler, its frame-identity trace, its overlay
+theme, its real reentry method) are stubs behind the verbatim headers (`perf_stub`,
+`frame_id_stub`, `ovl_ui_stub`, `reentry_stub`). The layer's `#else` block for a build with
+no OpenXR is incomplete upstream; `D2VR_WITH_OPENXR` is always 1 here.
+
+**The present path** (`core/framework/frame_hooks.cpp`): present-head first
+(`vr::on_present_begin`: session bring-up, the frame wait that paces the game, the head
+pose into the seam's `FrameInput`), then the seam and status work, the game tick, then
+present-tail (`stereo::end_frame` -> the method's texture -> `vr::on_present_end`), then the
+game's own `PresentEx`. Both halves are SEH-guarded; one fault poisons the VR work for the
+session and the game runs flat. `Reset` calls `stereo::on_reset()` before the device resets
+(the `hkReset` law). The `quit` seam word tears the session down on the present thread before
+WM_CLOSE. The import list of `d3d9.dll` stays the exe's own (`tests/golden/d3d9-imports.txt`).
 
 ## The camera seam (planned; S0.5 and S1 measure it)
 
@@ -189,6 +214,36 @@ with the build tag.
 ## Decision log
 
 Dated, newest first. A non-obvious choice, why it was made, and what would reverse it.
+
+### 2026-09-25 - [Device] Ex means "the shared capture is permitted", never "create as Ex"
+
+Dishonored's `[Device] Ex=1` hands its game an `IDirect3D9Ex` in place of the plain object so
+the device can share a surface with D3D11. This engine creates its own 9Ex device
+(ENGINE_NOTES s2), so none of that object substitution is adopted and the key keeps only its
+consequence: `Ex=1` lets `capture mode shared` run on the game's device, `Ex=0` refuses it.
+The capture's probe measured the shared surface AVAILABLE on the first launch. Reversed by a
+future Windows or driver change that makes the game's device non-Ex, which the probe line
+would say.
+
+### 2026-09-25 - the runtime layer is adopted under one mechanical rename, and the mono default is the readback
+
+The protected files carry the Dishonored namespace and macro prefixes under a fixed
+substitution (listed under "The runtime layer") so a fix still ports with the same `sed`; the
+first build proved the whole path in one launch. `[Capture] Mode=deferred` ships first (the
+user's order: the readback before the shared surface), with `shared` one seam word away and
+both costs logged per present, so the shipping default is decided by numbers in the PR, not
+by preference. Reversed by a measured cost that says otherwise.
+
+### 2026-09-25 - the Lua lane enters at ScriptSystem::Resume, with lua_pcall as the control
+
+The R2 plan said "wrap `lua_pcall` to catch the state". The census (ENGINE_NOTES s3) says
+`lua_pcall` has six static callers, all at VM creation or in debug paths, and no shipped
+script calls `pcall`: a wrap there catches nothing after startup. The engine runs every
+script callback through `ScriptSystem::Resume` -> `lua_resume`, and the main state sits in a
+static holder. So the lane's live entry is `ScriptSystem::Resume` (the engine's own per-tick
+script entry, on the game thread), the state comes from the holder and is cross-checked
+against the resumed coroutine's `global_State`, and the `lua_pcall` wrap stays as the
+negative control whose count must read 0. Reversed by that count reading anything else.
 
 ### 2026-09-25 - the session drives the game; the "never launch" rule is retired
 

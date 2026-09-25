@@ -243,7 +243,9 @@ void status_provider(d2vr::status::Writer& w)
         w.kv("d3d11", d2vr::d3d11::created());
         w.kv("adapter", d2vr::d3d11::adapter_name());
     w.end_obj();
-    d2vr::stereo::status(w);
+    w.obj("stereo");   // the seam writes flat keys (method, framesOut, ...): give them their own object
+        d2vr::stereo::status(w);
+    w.end_obj();
     {
         const d2vr::capture::Cost c = d2vr::capture::cost();
         w.obj("capture");

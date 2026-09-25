@@ -215,6 +215,33 @@ with the build tag.
 
 Dated, newest first. A non-obvious choice, why it was made, and what would reverse it.
 
+### 2026-09-25 - the Lua lane's control classifies pcall callers by return address, and a chunk returns its result
+
+The lane's own `lua_pcall` goes through the same wrap as the engine's. A flag set around the
+lane's call would file an engine `lua_pcall` fired from INSIDE the mod's chunk as "own", which
+is precisely the event the control exists to catch; so the wrap classifies each call by its
+return address (inside `.text` = the engine, elsewhere = the lane) and the control line counts
+only the engine. A chunk hands its answer back as a return value read with `lua_tolstring`
+after `lua_pcall(L, 0, 1, 0)`, never through a global: nothing of the mod's is written into the
+game's `_G`, and `lua_getfield` (whose first 24 bytes equal `lua_setfield`'s) stays unused.
+Every Lua prefix is verified in one pass BEFORE any wrap is installed, because a live wrap's
+site reads `E9 .. .. .. .. 90 90` and would fail its own verify afterwards. Measured on launch
+5 (ENGINE_NOTES s3, the R2 verdict).
+
+### 2026-09-25 - the F10 panel links ImGui's DX11 backend only, with D3DCompile forwarded
+
+The proxy's import list must stay the exe's own (KERNEL32, USER32, ADVAPI32, SHELL32). ImGui's
+Win32 backend pragmas gdi32 and dwmapi, and the DX11 backend pragmas d3dcompiler. So the
+panel (`core/ui/overlay`) uses the DX11 backend alone (`imgui_dx11` target): the display is
+the eye texture, time is the mod's clock, the mouse is the desktop cursor scaled into the
+texture through the event calls; and `core/gfx/d3dcompile_fwd.cpp` defines `D3DCompile`
+itself, forwarding to a runtime-loaded `d3dcompiler_47.dll`, with `/NODEFAULTLIB:d3dcompiler.lib`
+so a missing definition is a link error rather than a silent import. `IM_ASSERT` is
+redirected to the log (`third_party/imgui_config/d2vr_imconfig.h`): assert() vanishes in the
+player's build and would pop a dialog inside the game in Debug. The tiered, controller-driven
+panel is VR-275's final form; this is its first rung. `tools\exports-check.ps1` asserts the
+imports after every build.
+
 ### 2026-09-25 - [Device] Ex means "the shared capture is permitted", never "create as Ex"
 
 Dishonored's `[Device] Ex=1` hands its game an `IDirect3D9Ex` in place of the plain object so

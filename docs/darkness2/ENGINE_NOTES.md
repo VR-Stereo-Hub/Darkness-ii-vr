@@ -187,6 +187,41 @@ D3D11 texture on the runtime's adapter for OpenXR, exactly the Dishonored arrang
   `DefragWorker`. Whether the pump thread is the present thread is still a runtime measurement
   (s2: PresentEx is on the main thread; the pump canary counts once per present).
 
+**R2 verdict, the in-game half (VR-233, 2026-09-25; launch 5 on the simulator, build
+B95C5717 on branch `claude/vr-233-lua-lane-ingame`; the lane is `src/game/darkness2/lua/`):**
+
+- **The safe call point is the entry of `ScriptSystem::Resume` (0xC51FA0)**, on the game
+  thread, with the main state idle: `status == 0`, `ci == base_ci`, `nCcalls == 0`, and the
+  holder's `global_State` matched by a `lua_resume` within the last 120 presents. Two chunks
+  (`SetBaseFovOverride(110)`, then `(0)`) each ran at the very next Resume after they were
+  queued, 0 deferrals, and read back the value they set through `GetBaseFovOverride`.
+- **The thread**: `ScriptSystem::Resume` was first seen on thread 7700, which IS the present
+  thread (s2's `PresentEx` thread). The game thread presents. 0 Resumes from any other
+  thread over the run (the design's kill finding did not happen).
+- **The rate**: `ScriptSystem::Resume` and `lua_resume` 60-67 hits/s at the title and in the
+  alley, always equal: every script callback is one coroutine resume.
+- **The cross-check**: the resumed coroutine's `l_G` equalled the holder's on every one of
+  110,664 `lua_resume` calls (0 mismatches): one VM, and the holder at 0x10DD9C4 is it.
+- **The control** (`lua_pcall`, 0x772F10): 0 calls at the first present, 1 at the title, 5 in
+  the menu, 48 once the save had loaded, then **flat at 0.0/s for the rest of the run**. All
+  48 from one call site, 0xBBA876 (s8): a "call it if it is a function" helper. So the
+  census's "six static callers, init or debug" undercounted: the engine does run `lua_pcall`
+  at transitions (title, menu, level load), never in steady play. The wrap-at-`lua_pcall`
+  plan would have caught the state at a load but nothing per tick; the Resume entry is the
+  per-tick point. The control stays: a count that moves in steady play is the alarm.
+- **The wraps under CEG**: three more byte-verified prologue detours (5/5/7 bytes), re-read
+  every 5 s for the run: intact, 0 reverts (R1's verdict holds for these sites).
+- **The map**: `lua swigcheck` re-read the ten `swig_module_info` structs live: 10 of 10 match
+  `swig-api.md` (type counts and `type_initial` pointers).
+- **The library**: the shipped `lua_resume` references `C stack overflow`, the 5.1.4 shape
+  (5.1.3's has only the two "cannot resume" strings); the `lua_State` layout in `patterns.h`
+  (`nCcalls` u16 at 0x34) is consistent with both, and the main state's `nCcalls` stays 0
+  because 5.1.4's resume counts on the resumed thread. The 4 bytes before each state are stock
+  `LUAI_EXTRASPACE`. Rules the lane keeps: verify every prefix in ONE pass before any wrap goes
+  in (a live wrap's site reads `E9 .. .. .. .. 90 90`); no `lua_getfield` (its first 24 bytes
+  equal `lua_setfield`'s); the chunk RETURNS its result instead of writing a global; the
+  lane's own `lua_pcall` is filed apart from the engine's by return address, not a flag.
+
 ### UI: gameswf (not Scaleform)
 
 - "Compile gameswf with TU_ENABLE_NETWORK=1...", `/EE/Types/UISys/FlashMgrImpl`,
@@ -391,6 +426,9 @@ date and the build. All entries below: build 2012-03-20 (TimeDateStamp 0x4F68A87
 | `kLuaGetTop` / `kLuaSetTop` | 0xCFFEC0 / 0x4D2EF0 | `8B 4C 24 04 8B 41 08 2B 41 0C C1 F8 03 C3` / `8B 4C 24 08 8B 44 24 04 85 C9 7C 37` | `(top - base) >> 3` (an 8-byte TValue: float numbers); `lua_settop` is called as `lua_pop` at the end of every `SWIG_init`. `lua_gettop` is the first call of every SWIG wrapper |
 | `kLuaToLString`, `kLuaType`, `kLuaPushString`, `kLuaPushNumber`, `kLuaGetField`, `kLuaSetField`, `kLuaError` | 0x706A80, 0x93B370, 0xAD0BB0, 0xAE58D0, 0x710020, 0x80D360, 0x517F30 | s8 `patterns.h` | from the SWIG wrappers' and the base library's call shapes (`lua_pushstring` pushes `"swig_type"` in every `SWIG_init`; `lua_setfield(L, GLOBALSINDEX, "INF")` in the engine's library opener 0xD50AF0; `lua_error` calls `luaG_errormsg` 0xD165B0). `lua_getfield` and `lua_setfield` share their first 24 bytes: verify by VA |
 | The SWIG modules | s3, `swig-api.md` | data | each `SWIG_init` pushes `"swig_type"` (0xF35F4C) and `"swig_equals"` (0xFAEB9C) and passes its `swig_module_info` to 0xD8C3D0; the static `type_initial` arrays sit beside the module structs. Layouts: `swig_type_info` 24 bytes, `swig_lua_class` 32 bytes, methods `luaL_Reg` 8 bytes, attributes 12 bytes |
+| `kSwigModules[10]` | 0x10B8F94, 0x10A4214, 0x10C2BEC, 0x10AD424, 0x10A856C, 0x10D374C, 0x10B17C4, 0x10A02CC, 0x10A60AC, 0x10C5AB4 | data (`size` at +4, `type_initial` at +0xC) | the `swig_module_info` each `SWIG_init` passes to 0xD8C3D0 (s3, `tools/swig-dump.py` MODULES); the type counts and `type_initial` pointers are the map's. **Live** (2026-09-25, launch 5): `lua swigcheck` read all ten back, 10 of 10 MATCH |
+| `kSwigGetBaseFovOverride` | 0xDBDC60 | - | the `CameraControllerBase.GetBaseFovOverride` wrapper in the map (swig-api.md); the FOV chunk calls it after the set so "the field took the value" is read back, not assumed. Live: `SetBaseFovOverride(110) -> GetBaseFovOverride=110` |
+| The engine's live `lua_pcall` caller (documented, not in patterns.h) | 0xBBA876 (the return address; the call at 0xBBA871) | `6A 00 6A FF 6A 00 56 E8 9A 86 BB FF 83 C4 44` | **live** (launch 5): the only engine return address the `lua_pcall` wrap recorded. Offline: the function tests `lua_type(L,-1) == 6` (LUA_TFUNCTION, 0x93B370) and then calls `lua_pcall(L, 0, -1, 0)` (MULTRET): a "call it if it is a function" helper. Fired 1 time at the title, 5 by the menu, 48 by the end of the save load, 0 in steady play |
 | `kSetDllDirectoryCall` (documented, not in patterns.h) | 0x452640 | - | xref of the string `SetDllDirectoryA` (0xF1A254): `GetProcAddress(kernel32, "SetDllDirectoryA")` then a call with the caller's string. Live: at our DllMain `GetDllDirectory` returned `<game dir>\/Tools/PhysX/x86/`, so it runs before the D3D9 load and points at the PhysX folder |
 
 ## 9. R0 verdict: the loading route (VR-231, 2026-09-25)

@@ -28,6 +28,8 @@
 #   @capdiff <a.b> [tol]  the field is the same in the LAST capture and the one
 #                         BEFORE it, within tol (default 1): the picture did not
 #                         move between two shots (the head-locked contract).
+#   @capchange <a.b> <min> the opposite: the field moved by AT LEAST min between
+#                         the last two captures (something was drawn, or moved).
 #   @mark                 forget the mod log written so far: @log and @nolog only
 #                         look at what the mod wrote AFTER the last mark (the
 #                         start of the sequence is the first mark).
@@ -167,6 +169,14 @@ try {
                 $d = Get-CapDistance $a $b
                 if ($d -gt $tol) { throw "CAPDIFF FAILED: $($Matches[1]) moved from $(Format-CapField $a) to $(Format-CapField $b) between the last two captures (by $d, > $tol)" }
                 Write-Host "      capture $($Matches[1]): $(Format-CapField $a) -> $(Format-CapField $b) (within $tol)"
+            }
+            elseif ($line -match '^@capchange\s+(\S+)\s+([\d.]+)\s*$') {
+                if ($shots.Count -lt 2) { throw "CAPCHANGE FAILED: needs two @shot captures before '$($Matches[1])'" }
+                $a = Get-CapField $shots[-2] $Matches[1]; $b = Get-CapField $shots[-1] $Matches[1]
+                $min = [double]$Matches[2]
+                $d = Get-CapDistance $a $b
+                if ($d -lt $min) { throw "CAPCHANGE FAILED: $($Matches[1]) stayed at $(Format-CapField $a) -> $(Format-CapField $b) between the last two captures (moved $d, < $min)" }
+                Write-Host "      capture $($Matches[1]): $(Format-CapField $a) -> $(Format-CapField $b) (moved $d, >= $min)"
             }
             elseif ($line -match '^@capassert\s+(\S+)\s+(eq|ne|gt|ge|lt|le)\s+(.+)$') {
                 $k = $Matches[1]; $op = $Matches[2]; $v = $Matches[3]

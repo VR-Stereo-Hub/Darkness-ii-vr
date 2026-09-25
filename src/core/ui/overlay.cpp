@@ -161,7 +161,9 @@ void section_xr()
 void panel(uint32_t w, uint32_t h)
 {
     ImGuiIO& io = ImGui::GetIO();
-    const float scale = g_uiScale > 0.0f ? g_uiScale : (h > 0 ? (float)h / 900.0f : 1.0f);
+    // The eye texture is the game's backbuffer (2560x1440 here) shown on a 2.4 m quad at
+    // 1.75 m (about 69 degrees wide): text has to be large to read in the headset.
+    const float scale = g_uiScale > 0.0f ? g_uiScale : (h > 0 ? (float)h / 640.0f : 1.0f);
     g_scaleUsed = scale < 0.8f ? 0.8f : scale > 3.0f ? 3.0f : scale;
     ImGui::GetStyle().FontScaleMain = g_scaleUsed;
     ImGui::SetNextWindowPos(ImVec2(w * 0.28f, h * 0.10f), ImGuiCond_FirstUseEver);

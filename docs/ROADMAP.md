@@ -38,7 +38,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 
 - [x] R0 verdict written (VR-231, 2026-09-25: the app-dir `d3d9.dll`; ENGINE_NOTES s9)
 - [x] R1 verdict written (VR-232, 2026-09-25: four canaries, 33 min, no revert; ENGINE_NOTES s10)
-- [ ] R2 verdict written and `swig-api.md` committed (2026-09-25: the map is committed, 177 classes / 1143 methods / 208 attributes, and the VM census is in ENGINE_NOTES s3; the in-game execution proof is still open, VR-233)
+- [x] R2 verdict written and `swig-api.md` committed (2026-09-25, VR-233: the map (177 classes / 1143 methods / 208 attributes) and the VM census in ENGINE_NOTES s3; the in-game half measured on launch 5: the safe call point is the entry of `ScriptSystem::Resume` on the game thread, which is the present thread; `SetBaseFovOverride(110)` ran from the lane and read back; l_G matched on 110,664 resumes; the `lua_pcall` control flat in play; 10 of 10 SWIG modules verified live)
 - [ ] R3 verdict written
 - [ ] R4 verdict written
 - [x] R5 extractor committed; verdict written (VR-236, 2026-09-25; GAME_ASSETS s8)

@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "core/framework/vs_const.h"
 #include "core/framework/frame_hooks.h"
 #include "core/framework/status.h"
@@ -28,7 +29,7 @@ PFN_SetVSConstF g_origSetVSConstF = nullptr;
 // shader pointer -> the SS_Projection register (open addressing, upsert by
 // pointer: a freed address reused by a new shader overwrites the old entry
 // before any SetVertexShader can name it; the pointer is never dereferenced).
-struct Entry { void* shader; uint16_t reg; uint16_t count; bool hasProj; };
+struct Entry { void* shader; uint16_t reg; uint16_t count; bool hasProj; bool byShape; bool lazyParsed; };
 constexpr uint32_t kTableSize = 8192;
 Entry g_table[kTableSize] = {};
 volatile LONG g_tableUsed = 0;
@@ -72,28 +73,64 @@ Entry* find(void* shader)
     return nullptr;
 }
 
-void upsert(void* shader, bool hasProj, uint16_t reg, uint16_t count)
+Entry* upsert(void* shader, bool hasProj, uint16_t reg, uint16_t count)
 {
     uint32_t i = hash_ptr(shader);
     for (uint32_t n = 0; n < kTableSize; n++, i = (i + 1) & (kTableSize - 1)) {
         if (g_table[i].shader == shader || !g_table[i].shader) {
             if (!g_table[i].shader) InterlockedIncrement(&g_tableUsed);
             g_table[i].shader = shader; g_table[i].hasProj = hasProj; g_table[i].reg = reg; g_table[i].count = count;
-            return;
+            g_table[i].byShape = false; g_table[i].lazyParsed = false;
+            return &g_table[i];
         }
     }
     InterlockedIncrement(&g_tableOverflow);
+    return nullptr;
+}
+
+bool contains_nocase(const char* hay, const char* needle)
+{
+    const size_t n = strlen(needle);
+    for (const char* p = hay; *p; p++) if (!_strnicmp(p, needle, n)) return true;
+    return false;
 }
 
 // ---- the CTAB parse (D3DX constant-table layout; every offset relative to the
 // D3DXSHADER_CONSTANTTABLE struct, which begins right after the CTAB fourcc) ----
 struct CtabInfo { bool found; uint16_t reg, count; uint32_t names; uint16_t regSet, cls, rows, cols; };
 
+// The engine's enum name is ShaderRegister::SS_Projection; the CTAB may carry the
+// HLSL identifier under any spelling. Exact first, then a bare `...Projection`
+// suffix that is not a composite (World/View/Inverse/Prev...) whose diagonal
+// would not be the FOV. Launch 6 (2026-09-25): 0 of 81 shaders named
+// `SS_Projection`; the shape classifier below is the fallback that needs no name.
 bool name_matches(const char* name)
 {
     if (!strcmp(name, "SS_Projection")) return true;
     const char* colon = strrchr(name, ':');
-    return colon && !strcmp(colon + 1, "SS_Projection");
+    if (colon && !strcmp(colon + 1, "SS_Projection")) return true;
+    const char* dot = strrchr(name, '.');
+    if (dot && !strcmp(dot + 1, "SS_Projection")) return true;
+    const size_t n = strlen(name);
+    if (n >= 10 && !_stricmp(name + n - 10, "Projection")) {
+        static const char* const kComposite[] = { "World", "View", "Inverse", "Inv", "Prev", "Shadow", "Light", "Texture", "Reflect" };
+        for (const char* k : kComposite) if (contains_nocase(name, k)) return false;
+        return true;
+    }
+    return false;
+}
+
+// A pure symmetric projection, either packing: a diagonal top-left 2x2, zeros
+// everywhere else except m22 and the near term, m33 == 0 and the w term +-1.
+bool looks_perspective(const float* m)
+{
+    const float eps = 1e-6f;
+    if (fabsf(m[15]) > eps) return false;
+    if (!(fabsf(fabsf(m[11]) - 1.0f) < 0.001f || fabsf(fabsf(m[14]) - 1.0f) < 0.001f)) return false;
+    if (fabsf(m[0]) < 1e-4f || fabsf(m[5]) < 1e-4f || fabsf(m[0]) > 50.0f || fabsf(m[5]) > 50.0f) return false;
+    static const int kZero[] = { 1, 2, 3, 4, 6, 7, 8, 9, 12, 13 };
+    for (int z : kZero) if (fabsf(m[z]) > eps) return false;
+    return true;
 }
 
 bool parse_ctab_table(const uint8_t* tab, size_t size, void* shader, CtabInfo& out)
@@ -207,21 +244,42 @@ HRESULT STDMETHODCALLTYPE hkCreateVertexShader(IDirect3DDevice9* self, const DWO
     return hr;
 }
 
+// The lazy path: a shader that predates the hook or whose names were not logged
+// at create is read back through GetFunction (no AddRef; the engine just handed
+// it to SetVertexShader, so it is live) and parsed the same way.
+void lazy_parse(IDirect3DVertexShader9* sh, Entry* e)
+{
+    UINT size = 0;
+    if (FAILED(sh->GetFunction(nullptr, &size)) || size == 0 || size > (1u << 20)) return;
+    DWORD* buf = (DWORD*)malloc(size + 8);
+    if (!buf) return;
+    memset(buf, 0, size + 8);
+    if (SUCCEEDED(sh->GetFunction(buf, &size))) {
+        CtabInfo ci;
+        bool sawCtab = false;
+        __try { sawCtab = parse_shader(buf, sh, ci); } __except (EXCEPTION_EXECUTE_HANDLER) { ci = CtabInfo(); }
+        if (ci.found && !e->hasProj) {
+            e->hasProj = true; e->reg = ci.reg; e->count = ci.count; e->byShape = false;
+            InterlockedIncrement(&g_shadersWithProj);
+            D2VR_INFO("vsconst: shader %p (lazy): projection constant at c%u, %u registers", (void*)sh, (unsigned)ci.reg, (unsigned)ci.count);
+        }
+        D2VR_LOG_FIRST_N(D2VR_CAT, ::d2vr::log::Level::Info, 8, "vsconst: shader %p (lazy): %s, %u constants named",
+                         (void*)sh, sawCtab ? "CTAB read back" : "no CTAB", (unsigned)ci.names);
+    }
+    free(buf);
+}
+
 HRESULT STDMETHODCALLTYPE hkSetVertexShader(IDirect3DDevice9* self, IDirect3DVertexShader9* sh)
 {
     g_current = sh;
-    g_currentEntry = find(sh);
+    Entry* e = find(sh);
+    if (sh && !e) e = upsert(sh, false, 0, 0);   // a shader from before the hook (should not happen: hooked at create)
+    if (sh && e && g_names && !e->lazyParsed) { e->lazyParsed = true; lazy_parse(sh, e); }
+    g_currentEntry = e;
     return g_origSetVS(self, sh);
 }
 
-bool is_perspective(const float* m)
-{
-    // The w term sits at row2.w (column-major packing) or row3.z (row-major);
-    // the diagonal and this test are transposition-independent.
-    const float m33 = m[15];
-    const float a = m[11], b = m[14];
-    return fabsf(m33) < 0.01f && (fabsf(fabsf(a) - 1.0f) < 0.01f || fabsf(fabsf(b) - 1.0f) < 0.01f);
-}
+bool is_perspective(const float* m) { return looks_perspective(m); }
 
 void vote(const float* m)
 {
@@ -238,7 +296,23 @@ void vote(const float* m)
 HRESULT STDMETHODCALLTYPE hkSetVertexShaderConstantF(IDirect3DDevice9* self, UINT start, const float* data, UINT count)
 {
     if ((g_watch || g_substOn) && data && count) {
-        const Entry* e = g_currentEntry;
+        Entry* e = (Entry*)g_currentEntry;
+        // The shape classifier: no name known for this shader yet, so look for a
+        // projection-shaped block of four registers in this upload (launch 6:
+        // the CTABs name 0-3 constants and none is the projection; the engine
+        // binds its ShaderRegister enum to fixed registers).
+        if (e && !e->hasProj && count >= 4) {
+            for (UINT off = 0; off + 4 <= count; off++) {
+                if (looks_perspective(data + off * 4)) {
+                    e->hasProj = true; e->byShape = true; e->reg = (uint16_t)(start + off); e->count = 4;
+                    InterlockedIncrement(&g_shadersWithProj);
+                    D2VR_LOG_FIRST_N(D2VR_CAT, ::d2vr::log::Level::Info, 6,
+                        "vsconst: shader %p: a projection-SHAPED block at c%u in a %u-register upload starting at c%u (m00 %.5f m11 %.5f m22 %.5f w %.3f/%.3f) - recorded by shape",
+                        e->shader, (unsigned)e->reg, count, start, data[off * 4 + 0], data[off * 4 + 5], data[off * 4 + 10], data[off * 4 + 11], data[off * 4 + 14]);
+                    break;
+                }
+            }
+        }
         if (e && e->hasProj && start <= e->reg && start + count >= (UINT)e->reg + 2) {
             note_call_thread("SS_Projection upload");
             const float* m = data + (e->reg - start) * 4;
@@ -361,7 +435,11 @@ uint32_t shaders_with_projection() { return (uint32_t)g_shadersWithProj; }
 void log_status()
 {
     Projection p; latest(p);
-    D2VR_INFO("vsconst: watch %s, names %s, ctab subst %.1f (%ld rewritten) | shaders %ld (%ld with SS_Projection, %ld no CTAB, %ld parse faults, table %ld/%u, overflow %ld) "
+    int byShape = 0, byName = 0;
+    for (uint32_t i = 0; i < kTableSize; i++) if (g_table[i].shader && g_table[i].hasProj) { if (g_table[i].byShape) byShape++; else byName++; }
+    D2VR_INFO("vsconst: projection registers known for %d shaders (%d by CTAB name, %d by shape)%s", byName + byShape, byName, byShape,
+              g_currentEntry && g_currentEntry->hasProj ? "" : "; the current shader has none");
+    D2VR_INFO("vsconst: watch %s, names %s, ctab subst %.1f (%ld rewritten) | shaders %ld (%ld with a projection register, %ld no CTAB, %ld parse faults, table %ld/%u, overflow %ld) "
               "| uploads %ld (%ld perspective) | latest: %s V=%.2f H=%.2f aspect=%.4f from %u/%u persp of %u at present %u | call thread %lu",
               g_watch ? "ON" : "OFF", g_names ? "ON" : "OFF", substitute(), (long)g_substituted, (long)g_shadersSeen, (long)g_shadersWithProj,
               (long)g_ctabMissing, (long)g_ctabParseFail, (long)g_tableUsed, kTableSize, (long)g_tableOverflow, (long)g_uploadsTotal, (long)g_perspTotal,

@@ -1,0 +1,31 @@
+# panel.xrs - the F10 panel reaches BOTH eyes (Ref VR-275, the simple panel).
+#
+# The panel is drawn into the mono screen's texture, so it must composite in
+# the left eye AND the right eye, at the same place. ImGui's dark window counts
+# as "black" to the simulator's non-black counter (launch 6: the alley read
+# 11.3 percent without the panel and 12.0 with it), so the assertion is a
+# CHANGE: the text and widget pixels move the non-black fraction and the mean
+# luma by a measurable amount in both eyes, equally, and both fall back when
+# the panel closes. A panel drawn in one eye only fails @capsame. The eye
+# capture (shot_left.png / shot_right.png under the sim dir) is the picture.
+#
+# Run it in GAMEPLAY (boot.ps1 first).
+reset
+@mod overlay off
+@frames 30
+@shot panel_off
+@mod overlay on
+@frames 45
+@log overlay: OPEN 8s
+@shot panel_on
+@capchange stats.nonBlackPctL 0.4
+@capchange stats.nonBlackPctR 0.4
+@capchange stats.meanLumaL 0.2
+@capchange stats.meanLumaR 0.2
+@capsame stats.nonBlackPctL stats.nonBlackPctR 0.3
+@capsame stats.meanLumaL stats.meanLumaR 0.3
+@mod overlay off
+@frames 45
+@shot panel_off2
+@capchange stats.nonBlackPctL 0.4
+@capchange stats.nonBlackPctR 0.4

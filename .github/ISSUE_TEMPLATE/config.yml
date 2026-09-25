@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Known issues
+    url: https://github.com/VR-Stereo-Hub/Darkness-ii-vr/blob/main/docs/KNOWN_ISSUES.md
+    about: What is already known to be wrong, and the workaround.
+  - name: Troubleshooting
+    url: https://github.com/VR-Stereo-Hub/Darkness-ii-vr/blob/main/docs/TROUBLESHOOTING.md
+    about: The mod does not start, the headset shows nothing, the runtime is wrong.
+  - name: Team members - file in Linear, not here
+    url: https://linear.app/vr-stereo-hub
+    about: The board is the source of truth for work. GitHub issues are for players.

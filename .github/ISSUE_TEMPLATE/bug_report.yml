@@ -1,0 +1,61 @@
+name: Bug report
+description: Something the mod does wrong. Attach the log; it is the only instrument we have on your machine.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `docs/KNOWN_ISSUES.md` and `docs/TROUBLESHOOTING.md` first. Please do not attach game footage, frame dumps or captures: this repository carries no game-derived content.
+  - type: input
+    id: build
+    attributes:
+      label: Build tag
+      description: From the top of `darkness2_vr.log` (the banner line) or the launcher's About screen.
+      placeholder: v0.1.0-12-gabcdef0
+    validations:
+      required: true
+  - type: input
+    id: headset
+    attributes:
+      label: Headset and connection
+      placeholder: Quest 3 over Virtual Desktop (VDXR) / Index over SteamVR / other
+    validations:
+      required: true
+  - type: input
+    id: refresh
+    attributes:
+      label: Refresh rate and render size
+      placeholder: 90 Hz, 2496x2688
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, in your own words. Say which eye, which menu, which level if it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Load the save at ...
+        2. Turn the head 90 degrees while ...
+        3. ...
+  - type: dropdown
+    id: freshini
+    attributes:
+      label: Did it also happen with a fresh ini?
+      description: Rename `darkness2_vr.ini` next to the exe and launch once.
+      options:
+        - "Yes"
+        - "No"
+        - "Not tried"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The log
+      description: Attach `darkness2_vr.log` (and `darkness2_vr.prev.log` if the fault was in the previous run). Drag the files here. Do not paste it inline.
+    validations:
+      required: true

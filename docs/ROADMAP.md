@@ -36,12 +36,12 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 | **R6** | What owns FP rig placement: the `GAME_C1_CAMERA` bone, `mFirstPersonViewOffset`, or a per-frame entity transform write? | Write `mFirstPersonViewOffset` by name-resolved property and watch the hands. Toggle `EnableFirstPersonEyeOffset`. Write the camera bone's world matrix after animation and watch. Log the FP entity's world transform write each frame and find the caller | The verdict names the one write that places the FP entity, and reports whether `GAME_x1_TENTACLE_CLAV` and the four secondary tentacle roots are children of `GAME_C1_CAMERA` or of `GAME_C1_ROOT` |
 | **R7** | Where do animations start, evaluate and output? | Wrap the play-by-name request (R2's method list names it), log every start with its name, target entity and the `IV_*` inputs; find the AnimTree evaluate and the bone pose buffer before the palette build. Suppress `DemonArm_Idle_Left_03` by name and watch | The log shows named starts for idles, slashes, grabs, pistol fires; one suppressed idle is visibly absent. The verdict names the pose buffer and its coordinate space |
 
-- [ ] R0 verdict written
-- [ ] R1 verdict written
+- [x] R0 verdict written (VR-231, 2026-09-25: the app-dir `d3d9.dll`; ENGINE_NOTES s9)
+- [x] R1 verdict written (VR-232, 2026-09-25: four canaries, 33 min, no revert; ENGINE_NOTES s10)
 - [ ] R2 verdict written and `swig-api.md` committed
 - [ ] R3 verdict written
 - [ ] R4 verdict written
-- [ ] R5 extractor committed; verdict written
+- [x] R5 extractor committed; verdict written (VR-236, 2026-09-25; GAME_ASSETS s8)
 - [ ] R6 verdict written
 - [ ] R7 verdict written
 
@@ -57,12 +57,12 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   3, the PowerShell harness (`build`, `install`, `launch-game`, `tail-log`, `xrsim-*`,
   `game-cmd`, `status-dump`).
 - **Done when**:
-  - [ ] `launch-game.ps1` starts the game through Steam and the log shows the module entry
-        and the D3D9 create
-  - [ ] `status.json` updates every second
-  - [ ] A forced crash writes a minidump with a readable stack and a crash file with the run
-        identity
-  - [ ] `xrsim-selftest.ps1` passes and the game reaches gameplay on the simulator
+  - [x] `launch-game.ps1` starts the game through Steam and the log shows the module entry
+        and the D3D9 create (2026-09-25, every launch of the session)
+  - [x] `status.json` updates every second (2026-09-25: 716 writes in a 12-minute stretch, `statusWrites` in the file)
+  - [x] A forced crash writes a minidump with a readable stack and a crash file with the run
+        identity (2026-09-25: `crash test`, a 28 MB dump, `read-dump.py` decodes the exception)
+  - [ ] `xrsim-selftest.ps1` passes (2026-09-25: PASS, 60 frames, FOCUSED) and the game reaches gameplay on the simulator (needs the runtime layer, VR-241)
 
 ## S0.5 - The OpenXR layer, the mono screen, the camera eyetest (M1)
 
@@ -80,7 +80,7 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 - **Done when**:
   - [ ] Both simulator eyes receive frames at the game's frame rate for 5 minutes
   - [ ] `camera eyetest` prints exactly one HONOURED write with the measured FOV delta
-  - [ ] The device path verdict (Ex vs non-Ex, present call and thread) is in ENGINE_NOTES
+  - [x] The device path verdict (Ex vs non-Ex, present call and thread) is in ENGINE_NOTES (2026-09-25, s2: `Direct3DCreate9Ex`, `CreateDeviceEx`, `PresentEx` from the main thread)
 
 ## S1 - Mono screen in a headset; head tracking; positional; render size (M1 / M2)
 
@@ -257,6 +257,30 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 New entries are prepended here, newest first, as ticket checklists (the Dishonored shape:
 `## <title> (VR-<n>, <date>)` with checkboxes), so the top of this file is always the current
 work and the ladder above is the reference.
+
+## The loading route, the framework floor, the R1 canaries, the extractor (VR-231, VR-239, VR-232, VR-236, 2026-09-25)
+
+- [x] R0 measured: the app-dir `d3d9.dll` is loaded by the exe's bare-name `LoadLibraryA`
+      0.5 s after process creation, in 2 of 2 launches; `Direct3DCreate9Ex(SDK=32)` entered
+      from our module; the Steam overlay loaded (ENGINE_NOTES s9)
+- [x] The framework floor: proxy (23 exports), log (ten deep), crash handler (run identity,
+      minidump), command seam at 1 Hz, `status.json`, D3D9 vtable hooks and the present tick,
+      backbuffer capture, the in-process input lane, ini + golden, build fingerprint
+- [x] The harness: build, install (full ini diff), launch through Steam, boot to gameplay,
+      game-cmd, game-key, game-shot, status-dump, module-census, quit-game, soak, log-parse,
+      exports-check, disasm-rva, pe-xref, read-dump, ini-golden
+- [x] The simulator ported and self-tested (`d2vr-xrsim`, Quest 3, 60 frames, FOCUSED); the
+      game on it waits for VR-241
+- [x] R1 measured: four byte-verified canaries live for 33 minutes across a menu round trip,
+      a checkpoint reload and a level restart; 0 reverts, 0 exceptions, clean quit
+      (ENGINE_NOTES s10)
+- [x] R5: `tools/cache/extract.py` lists 47,425 paths, dumps 430 Lua scripts as source,
+      parses both skeleton tables; the camera and tentacle roots are children of the root bone
+      (GAME_ASSETS s5, s8)
+- [x] The harness rule changed: the session drives the game (CLAUDE.md, TESTING, VERIFICATION,
+      the decision log)
+- [ ] The PR against `staging` opened with `Fixes VR-231, VR-239, VR-232, VR-236`; the user
+      merges
 
 ## Docs set and the Linear flow (VR-230, 2026-09-25)
 

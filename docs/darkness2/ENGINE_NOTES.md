@@ -371,11 +371,41 @@ the last resort because it changes how the game is started.
 device is installed from the `Direct3DCreate9Ex` wrapper, never DllMain; nothing about the route
 depends on the working directory.
 
-## 10. R1: in-memory hooks under CEG (VR-232, measurement in progress)
+## 10. R1 verdict: in-memory hooks under CEG (VR-232, 2026-09-25)
 
-Four canaries (`src/game/darkness2/canaries.cpp`), byte-verified, installed from the first
-present: `cold` at `kDx9InitFn`, `tick` at `kMsgPumpFn`, `callsite` at `kPumpCallSite`, `hot`
-at `kPresentWrapperFn`. Every second: hits/s and a re-read of the patched bytes. The 30-minute
-protocol (`tools/soak.ps1`): gameplay from the save, a menu round trip at minute 10, a checkpoint
-reload at minute 15, a level restart at minute 20, periodic movement and looks, screenshots
-every 5 minutes, `quit` at the end. The verdict is written below when the run completes.
+**CEG tolerated four in-memory code hooks for a 33-minute session across a menu round trip, a
+checkpoint reload and a level restart: no exit, no byte revert, no exception.** One run, one
+data point; every later launch with canaries on adds to it.
+
+The instrument: four canaries (`src/game/darkness2/canaries.cpp`), each byte-verified against
+`patterns.h` and installed from the FIRST PRESENT (about 7 s after process creation, after the
+engine's startup had run), each counting hits and re-reading its own bytes once a second:
+
+| Canary | Site | Shape | Hits over the run | Bytes |
+|---|---|---|---|---|
+| `cold` | `kDx9InitFn` 0xCF2C30 | 6-byte `jmp` + nop over the prologue of code that ran once at startup | 0 (expected: the init ran before the hook) | intact every second |
+| `tick` | `kMsgPumpFn` 0xB2E5E0 | 5-byte `jmp` over the message pump's prologue (game thread) | 841,948 at 64/s in menus, 494/s in gameplay (equal to the present rate: it IS once per tick) | intact |
+| `callsite` | `kPumpCallSite` 0xB2E6E9 | the `call` rel32 inside the pump rewritten to a counting tail-jump stub | 841,948 (equal to `tick`) | intact |
+| `hot` | `kPresentWrapperFn` 0x920EE0 | 5-byte `jmp` over the present wrapper's prologue | 841,948 (equal to the present count) | intact |
+
+The run (`tools/soak.ps1 -Minutes 30 -Attach`, log archived under `build/logs/`): canaries
+live at tick 18783062; gameplay from the save; the pause menu opened and closed at minute 10;
+`RESTART CHECKPOINT` confirmed at minute 15 (the alley reloaded); `RESTART LEVEL` confirmed
+at minute 20 (the level's opening cinematic played: a full level load); movement and looks
+every 20 s throughout; `quit` at minute 30 and a clean `WM_CLOSE` exit at tick 20785843. The
+soak's own summary: `byte reverts/changes: 0`, `refused canaries: 0`, `exceptions recorded:
+0`, `exit: clean`. The earlier crash-test run (s7) shows what the failure shape would look
+like in the same files.
+
+**What this does and does not say.** In-memory `E9` detours at a hot render site, a per-tick
+game-thread site, a cold init site and a rewritten call site are not reverted and do not end
+the process over 33 minutes and two loads, so no code range among these four needs avoiding
+and hooks installed after the engine is up need no further wait. It does NOT say that a hook
+installed BEFORE the engine's startup (at DllMain, or from the `Direct3DCreate9Ex` wrapper,
+which runs 7 s earlier) survives; nothing resolves at init here anyway, and the rule stands.
+It does not say anything about writes to the exe's data pages or its import table. If a later
+site ever reverts, the per-second line names the tick and the bytes.
+
+**Rule for the mod**: engine code hooks install from the present thread once the game is up
+(the framework's `present_tick`), byte-verified, default OFF, with the 1 Hz re-read left on in
+every build so a regression shows up as a `REVERTED` line, not a silent exit.

@@ -1,0 +1,31 @@
+; d3d9.dll proxy export table: EVERY export of the 32-bit system d3d9.dll
+; (SysWOW64\d3d9.dll 10.0.26100, 23 entries, ordinals 16-38), with the same
+; ordinals, so anything that imports by name or by ordinal resolves. Names must
+; be UNDECORATED (no _Name@N), which MSVC gets from this file. The six
+; ordinal-only entries are exported NONAME and forwarded by ordinal.
+; tools\exports-check.ps1 compares the built table with tests\golden\d3d9-exports.txt.
+LIBRARY d3d9
+EXPORTS
+    d2vr_ord16                                @16 NONAME
+    d2vr_ord17                                @17 NONAME
+    d2vr_ord18                                @18 NONAME
+    d2vr_ord19                                @19 NONAME
+    Direct3DCreate9On12=d2vr_exp_Direct3DCreate9On12 @20
+    Direct3DCreate9On12Ex=d2vr_exp_Direct3DCreate9On12Ex @21
+    d2vr_ord22                                @22 NONAME
+    d2vr_ord23                                @23 NONAME
+    Direct3DShaderValidatorCreate9=d2vr_exp_Direct3DShaderValidatorCreate9 @24
+    PSGPError=d2vr_exp_PSGPError @25
+    PSGPSampleTexture=d2vr_exp_PSGPSampleTexture @26
+    D3DPERF_BeginEvent=d2vr_exp_D3DPERF_BeginEvent @27
+    D3DPERF_EndEvent=d2vr_exp_D3DPERF_EndEvent @28
+    D3DPERF_GetStatus=d2vr_exp_D3DPERF_GetStatus @29
+    D3DPERF_QueryRepeatFrame=d2vr_exp_D3DPERF_QueryRepeatFrame @30
+    D3DPERF_SetMarker=d2vr_exp_D3DPERF_SetMarker @31
+    D3DPERF_SetOptions=d2vr_exp_D3DPERF_SetOptions @32
+    D3DPERF_SetRegion=d2vr_exp_D3DPERF_SetRegion @33
+    DebugSetLevel=d2vr_exp_DebugSetLevel @34
+    DebugSetMute=d2vr_exp_DebugSetMute @35
+    Direct3D9EnableMaximizedWindowedModeShim=d2vr_exp_Direct3D9EnableMaximizedWindowedModeShim @36
+    Direct3DCreate9                           @37
+    Direct3DCreate9Ex                         @38

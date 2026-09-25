@@ -567,7 +567,39 @@ is not forbidden; it is a plan that starts with the measurement that killed its 
 
 ## 12. This repo's own traps
 
-None yet. Entries go here, newest first, in the same commit as the work that found them.
+Entries go here, newest first, in the same commit as the work that found them.
+
+## A 64-bit PowerShell counts 7 of a 32-bit game's 110 modules (VR-231, 2026-09-25)
+
+What was seen: the first external module census said the app-dir `d3d9.dll` was NOT in the
+process and the Steam overlay was not loaded, while the log's loader list said both were.
+What was actually happening: `Process.Modules` from a 64-bit host sees only the WOW64 shims of
+a 32-bit process.
+What it cost: one contradictory verdict line, caught because the in-process report existed.
+The rule: enumerate a 32-bit process from a 32-bit process (`module-census.ps1` re-launches
+itself under `SysWOW64\WindowsPowerShell`).
+Where the detail is: ENGINE_NOTES s7.
+
+## A short key tap does not land on the title screen or the main menu (VR-239, 2026-09-25)
+
+What was seen: `key enter tap 60` at the title did nothing; the first soak booted to the main
+menu and stayed there because its 150 ms Enter on CONTINUE did nothing, so twelve minutes of
+canary evidence were recorded at a menu, not in gameplay.
+What was actually happening: the gameswf title and main menu poll input slower than a frame;
+the pause menu does not.
+What it cost: one soak restarted by hand mid-run.
+The rule: 400 ms holds for the title and main menu, 150 ms in the pause menu, and every boot
+step is checked by the picture (`boot.ps1` measures the shot's luma and retries once).
+Where the detail is: TESTING.md "The session drives the game".
+
+## A CMake `EXISTS` guard is evaluated at configure time (VR-240, 2026-09-25)
+
+What was seen: the simulator and the smoke client did not build after their sources were
+added; `build.ps1` reported success.
+What was actually happening: the targets sit behind `if(EXISTS ...)` so the tree configures
+before the port lands; adding the files does not re-run configure.
+What it cost: one failed self-test.
+The rule: after adding a guarded target's sources, reconfigure (`cmake -S . -B build`).
 
 ### Entry format
 

@@ -11,9 +11,11 @@ through VDXR (Quest via Virtual Desktop), any native 32-bit runtime, or the bund
 shim. The runtime layer, the simulator and the process are adopted from the Dishonored VR mod
 (same org), which was built the same way and shipped 1.0.
 
-**There is no code yet.** This repo starts with its documentation, its dev flow and its board,
-and the first engineering tickets are a research gate (`docs/ROADMAP.md` R0-R7). Anything
-below marked "planned" describes the intended layout, not something that exists.
+**The framework floor exists** (M1 session 1, 2026-09-25): the `d3d9.dll` proxy, logging,
+the crash handler, the command seam, `status.json`, the input lane, the backbuffer capture,
+the R1 canaries, the simulated OpenXR runtime and the PowerShell harness. Nothing VR yet: the
+runtime layer, the capture into D3D11 and the mono screen are VR-241 (S0.5). Anything below
+marked "planned" describes the intended layout, not something that exists.
 
 Two branches: **`staging`** (integration; every PR lands here) and **`main`** (release; its tip
 is always the latest tag, moved only by the release PR `staging` -> `main` that the user
@@ -211,12 +213,19 @@ Extensive does not mean noisy. The rules that buy volume without cost:
   creating; create from the template if absent, with project, milestone, priority and a `Type`
   label), move it to In Progress and branch `<owner>/vr-<n>-<slug>` off `staging`. Touching engine
   internals? Read ENGINE_NOTES first; new findings go there in the same commit as the code.
-- **Validate in the SIMULATOR before asking for a headset**, once it exists (M1). Perceptual
-  questions (comfort, judder, world scale, warp, whether the tentacles feel like yours) still
-  need the headset and the F10 overlay.
-- **Never launch the game yourself.** Build, install, diff the installed ini, archive the
-  previous log, and hand the user ONE question per launch with the expected outcomes and what
-  each means. Check the log banner matches the installed build before reading anything.
+- **Validate in the SIMULATOR before asking for a headset.** `tools\xrsim-selftest.ps1` says
+  whether the simulator itself is healthy; the game runs on it once the runtime layer exists
+  (VR-241). Perceptual questions (comfort, judder, world scale, warp, whether the tentacles feel
+  like yours) still need the headset and the F10 overlay.
+- **The session launches, drives and quits the game itself** (the user's decision,
+  2026-09-25; it replaced the earlier "never launch" rule once the harness could drive the
+  flat game). `tools\launch-game.ps1` goes through Steam and archives the previous log;
+  `tools\boot.ps1` reaches gameplay on the newest save; `tools\game-key.ps1` /
+  `game-cmd.ps1 "key ..."` inject input INSIDE the game process; `tools\game-shot.ps1` writes
+  the backbuffer as a BMP the session reads as an image; `tools\quit-game.ps1` closes it. Every
+  launch: install, diff the ini, archive the log, launch, check the banner names the installed
+  build before reading anything. Perceptual questions (comfort, judder, world scale) still need
+  the user in the headset, with a live A/B lever, and are asked as ONE question per headset run.
 - Non-obvious design choices get a dated entry in the decision log at the bottom of
   `docs/ARCHITECTURE.md`.
 - **END**: rewrite "Current state" and "Next steps" in `docs/STATUS.md`, append a dated session
@@ -231,19 +240,31 @@ Extensive does not mean noisy. The rules that buy volume without cost:
   "what is deliberately not here". If a group of tickets closed, post one batch project
   update on Linear, not one per ticket.
 
-## Build / install / test (planned; lands with the framework ticket)
+## Build / install / test
 
 ```powershell
-.\tools\build.ps1 [-Release]              # the mod module + the shim + the simulator + the smoke client
-.\tools\install.ps1 [-Release]            # copies into <game>\ (next to DarknessII.exe)
-.\tools\lint.ps1                          # the em-dash gate and friends (EXISTS)
-.\tools\tail-log.ps1 [-Grep "xr:|crash"]  # follow <game>\darkness2_vr.log
-.\tools\xrsim-selftest.ps1                # is the SIMULATOR healthy?
-.\tools\xrsim-launch.ps1                  # launch the game on the simulator
+.\tools\build.ps1 [-Release]              # the mod module + the simulator + the smoke client
+.\tools\install.ps1 -Release [-Set "Canary.Cold=1"]   # copies next to DarknessII.exe; DIFFS the full ini
+.\tools\lint.ps1                          # the em-dash gate and friends
+.\tools\exports-check.ps1 build\src\RelWithDebInfo\d3d9.dll   # the 23-entry export table
+.\tools\launch-game.ps1 -WaitBanner       # through Steam; archives the previous log; waits for the banner
+.\tools\boot.ps1                          # title -> menu -> Continue -> gameplay, with shots
+.\tools\tail-log.ps1 [-Once] [-Grep "route:|canary"]   # follow <game>\darkness2_vr.log
+.\tools\game-cmd.ps1 "status" "shot menu"  # the command seam (waits for the ack)
+.\tools\game-key.ps1 esc -Hold 150        # keys/mouse through the mod's input lane
+.\tools\game-shot.ps1 -Tag x              # the backbuffer as <data>\shots\x_NNN.bmp
+.\tools\status-dump.ps1                   # status.json, pretty-printed
+.\tools\module-census.ps1                 # the running game's modules (32-bit), the route from outside
+.\tools\quit-game.ps1                     # WM_CLOSE through the seam, Stop-Process fallback
+.\tools\soak.ps1 -Minutes 30              # R1's protocol with the four canaries live
+.\tools\log-parse.ps1 [-Canaries]         # summarise a log
+.\tools\xrsim-selftest.ps1 -Release       # is the SIMULATOR healthy? (xr_hello32 on d2vr-xrsim)
+.\tools\xrsim-launch.ps1                  # launch the game on the simulator (needs VR-241)
 .\tools\xrsim-cmd.ps1 "head rot 30 0 0"   # drive the simulated head/hands/controls
 .\tools\xrsim-shot.ps1 -Out shot          # per-eye compositor capture + JSON to assert on
-.\tools\game-cmd.ps1 "stereo status"      # the mod's command seam
-.\tools\status-dump.ps1                   # status.json, pretty-printed
+python tools\disasm-rva.py <exe> dis 520EE0   # offline RE (output never committed)
+.\tools\pe-xref.ps1 -Exe <exe> -TargetRva 8F2C30  # caller census
+python tools\read-dump.py <dmp>            # summarise a minidump
 ```
 
 - Game: Steam appid 67370, `<library>\steamapps\common\Darkness II\DarknessII.exe` (on the
@@ -252,11 +273,12 @@ Extensive does not mean noisy. The rules that buy volume without cost:
   the exe delay-loads `Tools\steam_api.dll` and expects the Steam client.
 - Game config: `%APPDATA%\DarknessII\` (`EE.cfg`, `Editor.cfg`, `<steamid>\settings`,
   `<steamid>\CONTINUE.SAV`), all obfuscated. Read-only for the mod.
-- Files next to the exe (planned): `darkness2_vr.ini`, `darkness2_vr.log` (+ rotation),
-  `darkness2_vr_crash.txt`, `disable_vr.txt` (kill switch). Harness files in
-  `%LOCALAPPDATA%\Darkness2VR\`: `command.txt`, `ack.txt`, `status.json`, `dumps\`, `xrsim\`.
-  Override with `D2VR_DATA_DIR`.
-- Clean clone will need `git clone --recursive` once submodules exist.
+- Files next to the exe: `darkness2_vr.ini`, `darkness2_vr.log` (+ `.prev.log` .. `.prev9.log`),
+  `darkness2_vr_crash.txt`, `disable_vr.txt` (kill switch: log and route report only). Harness
+  files in `%LOCALAPPDATA%\Darkness2VR\`: `command.txt`, `ack.txt`, `status.json`, `dumps\`,
+  `shots\`, `xrsim\`. Override with `D2VR_DATA_DIR`. Env: `D2VR_LOG`, `D2VR_LOG_CATS`,
+  `D2VR_SKIP`, `D2VR_GAME_DIR`.
+- Clean clone: `git clone --recursive` (submodules `third_party/OpenXR-SDK`, `third_party/imgui`).
 
 ## Repo map (planned)
 

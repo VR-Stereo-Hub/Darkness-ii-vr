@@ -40,20 +40,24 @@ request only, with a deadline. **The Lua lane** is code the mod executes inside 
 own `lua_State` at a point on the game thread the engine already calls into script; it never
 runs on any other thread. Cross-lane state is published as self-expiring snapshots.
 
-## The loading route (planned; R0 decides)
+## The loading route (R0 verdict, 2026-09-25: the app-dir d3d9.dll)
 
-The renderer is not in the import table: the exe calls `LoadLibrary("D3D9.DLL")` then
-`Direct3DCreate9` or `Direct3DCreate9Ex`. The expected winner is a `d3d9.dll` proxy next to
-the exe that forwards every export to the system DLL and wraps the two create calls, because a
-bare-name load resolves from the application directory first and `d3d9` is not a KnownDLL.
-The game's own DLLs live under `Tools\`, so the application directory must be confirmed by
-loader snaps before this is relied on. Fallbacks: a proxy for one of the delay-loaded DLLs
-(`xinput1_3.dll`, `dinput8.dll`) that wraps `LoadLibrary`/`GetProcAddress`; a suspended-launch
-injector as the last resort.
+The renderer is not in the import table: the exe calls `LoadLibraryA("D3D9.DLL")` by bare
+name and then `Direct3DCreate9Ex(0x20)` (`Direct3DCreate9` only if the export is missing or
+`Graphics.EnableDirect3D9Ex` is 0). **The mod module is a `d3d9.dll` next to `DarknessII.exe`**
+that forwards all 23 exports of the system DLL (by ordinal for the six unnamed ones) and wraps
+the two create calls. Measured (`docs/darkness2/ENGINE_NOTES.md` s9): the loader takes it from
+the exe's directory 0.5 s after process creation, even though the exe had already called
+`SetDllDirectoryA` to its PhysX folder, because the application directory is always searched
+first. Fallbacks, unused: an `xinput1_3.dll` proxy hooking the exe's `LoadLibraryA` wrapper; a
+suspended-launch injector.
 
-Whatever the route, `DllMain` is loader-lock safe: paths, clock, log, the kill switch
-(`disable_vr.txt`), two early ini ints, nothing that resolves engine state. Everything else
-waits for the create wrap.
+`DllMain` is loader-lock safe: paths, clock, log, the kill switch (`disable_vr.txt`), the log
+environment and the route self-report (our module path, the exe, `GetDllDirectory`, the PEB
+loader list). Nothing that touches the ini, another DLL or engine state. Everything else
+(config, the crash handler, the seam, `status.json`, the game layer, the D3D9 vtable hooks)
+runs from the first `Direct3DCreate9Ex` call, and every engine code hook from the first
+present.
 
 **CEG.** The exe is Valve CEG linked. No byte is ever written to the exe on disk. Hooks are
 in-memory and installed after the game is up. R1 measures whether and where they survive.
@@ -144,12 +148,14 @@ reliable place; measured on BioShock). Chords: both stick clicks tap for F10 and
 recenter. On top: gestures (slash, grab, heart), physical crouch, snap turn. The mod owns the
 dual-wield trigger mapping regardless of the game's swap option.
 
-## Config and files (planned)
+## Config and files
 
-`darkness2_vr.ini` next to the exe, one home per key, the resolved value logged at startup,
-per-key migrations with markers and no version bump. Data dir `%LOCALAPPDATA%\Darkness2VR\`
-(`D2VR_DATA_DIR` overrides): `command.txt`, `ack.txt`, `status.json`, `dumps\`, `xrsim\`. Logs
-next to the exe, ten sessions deep. The game's own config is never written.
+`darkness2_vr.ini` next to the exe, one home per key, the resolved value logged at startup
+(`config:` lines), the default literal in `core/config/config.cpp` extracted into
+`tests/golden/darkness2_vr.ini` by `tools/ini-golden.py` and diffed by `install.ps1` before
+every run. Data dir `%LOCALAPPDATA%\Darkness2VR\` (`D2VR_DATA_DIR`, then `[Paths] DataDir`):
+`command.txt`, `ack.txt`, `status.json`, `dumps\`, `shots\`, `xrsim\`. Logs next to the exe,
+ten sessions deep. The game's own config is never written.
 
 ## Code structure (planned; the Dishonored layout)
 
@@ -183,6 +189,36 @@ with the build tag.
 ## Decision log
 
 Dated, newest first. A non-obvious choice, why it was made, and what would reverse it.
+
+### 2026-09-25 - the session drives the game; the "never launch" rule is retired
+
+The user's instruction in M1 session 1: testing is automatic, the session launches, plays and
+quits the game and prepares the simulation scripts. What made it possible: an input lane
+inside the game process (`core/input/inject`, `SendInput` with scancodes from a worker
+thread) and a backbuffer capture (`shot`) the session reads as an image. Headset judgements
+stay the user's. Reversed by the user asking for the old one-question-per-launch protocol.
+
+### 2026-09-25 - the proxy forwards all 23 exports, with naked thunks
+
+Not the nine names one game imports: the whole system table, same ordinals, `NONAME` for the
+six unnamed entries, so any other module in the process that imports d3d9 by name or ordinal
+resolves. Everything but the two creates is a naked tail-jump thunk, so unknown signatures
+pass through untouched. `tools/exports-check.ps1` gates the table. Reversed by nothing.
+
+### 2026-09-25 - the hot canary site is derived at runtime, not statically
+
+The engine wraps the device in its own driver class, so the COM `Present` call cannot be told
+apart from 1306 look-alike shapes in `.text`. The `Present` vtable hook logs its return
+address into the exe; the enclosing function (0x920EE0) became the hot site, byte-verified like
+every other. The pattern for later hooks: measure the return address first, then fix the
+number in `patterns.h` with its signature. Reversed by nothing.
+
+### 2026-09-25 - engine hooks install from the first present, canaries default OFF
+
+Nothing resolves at init: the four R1 canaries (and every later engine hook) install from the
+present thread on the first frame, after the fingerprint check, and are OFF unless the ini or
+the seam turns them on. The soak turns them on through `install.ps1 -Set`, which prints the
+diff. Reversed by an R1 verdict that says hooks must wait for a later moment.
 
 ### 2026-09-25 - staging and main from the first commit
 

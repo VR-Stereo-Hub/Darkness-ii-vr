@@ -1,0 +1,20 @@
+#pragma once
+// GENERATED at build time by cmake/GenerateVersion.cmake - do not edit.
+// The version in darkness2_vr.log always matches the tree it was built from.
+
+#define D2VR_VERSION  "@D2VR_VERSION@"   // from project(... VERSION) in CMakeLists.txt
+#define D2VR_BUILD_ID "@D2VR_BUILD_ID@"  // git describe --tags --always --dirty
+
+// The build CONFIG comes from a per-config compile definition
+// (src/CMakeLists.txt), not from this header, because the generator is
+// multi-config and this file is stamped once for all of them. A Debug build is
+// /Od /RTC1 with the debug CRT; its timing numbers are not comparable with a
+// RelWithDebInfo build's, and the log banner says which one it is.
+#ifndef D2VR_BUILD_CONFIG
+#define D2VR_BUILD_CONFIG "unknown"
+#endif
+#ifdef _DEBUG
+#define D2VR_BUILD_OPTIMISED 0
+#else
+#define D2VR_BUILD_OPTIMISED 1
+#endif

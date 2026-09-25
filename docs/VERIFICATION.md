@@ -19,16 +19,23 @@ perceptual question is worse.**
 Tiers are run in order. A tier-3 question is asked only when tiers 1 and 2 have nothing left
 to say, and with the A/B that would disprove the answer already in the panel.
 
-## The decision table (planned; grows per ticket)
+## The decision table (grows per ticket)
 
-The shape: one row per intent, naming the tool, the command and how to read the result. The
-first rows this repo will have:
+One row per intent, naming the tool, the command and how to read the result. Rows marked
+(live) have run on this game; the rest land with their tickets.
 
 | Intent | Tool | Command | Reading |
 |---|---|---|---|
-| Is the simulator healthy | `xrsim-selftest.ps1` | `.\tools\xrsim-selftest.ps1` | PASS; `xr_hello32` reaches a session |
-| Did the module load and hook | the log | `.\tools\tail-log.ps1` | the banner, the loading route line, `INSTALLED at 0x... verify OK` per hook |
-| Is the seam alive | `game-cmd.ps1` | `"status"` then `status-dump.ps1` | `state`, `hooks.*`, `stereo.method`, `stereo.framesOut` advancing |
+| Is the simulator healthy (live) | `xrsim-selftest.ps1` | `.\tools\xrsim-selftest.ps1 -Release` | `SELFTEST PASS: d2vr-xrsim ran 60 frames, reached FOCUSED, 0 errors` |
+| Did the module load, and by which route (live) | the log | `.\tools\log-parse.ps1` | `route: loaded from the exe's own directory: YES`, `Direct3DCreate9Ex(SDK=32) entered from our module` |
+| Is the route true from outside the process (live) | `module-census.ps1` | `.\tools\module-census.ps1` | two `d3d9.dll` instances, ours in the game dir, the system one as the backend; `GameOverlayRenderer.dll` loaded |
+| Is the seam alive (live) | `game-cmd.ps1` | `"status"` then `status-dump.ps1` | the ack `seq N`; `frame.presents` advancing; `statusWrites` up by one per second |
+| Is this the derived build (live) | the log | `fingerprint:` | four `ok`; a MISMATCH means every code hook refuses |
+| Does an engine hook hold (live) | the log | `canary status`, `log-parse.ps1 -Canaries` | `INSTALLED at 0x...` with the bytes; per-second `intact`; a `REVERTED` line names the tick |
+| What does the game look like right now (live) | `game-shot.ps1` | `.\tools\game-shot.ps1 -Tag x` | a BMP the session reads as an image; the log line's `mean sample luma` says "black" without opening it |
+| Did a key land (live) | `game-shot.ps1` before and after | `game-cmd.ps1 "key enter tap 400"` | the picture changed (menus are dark, gameplay lighter); 60 ms taps do not land on the title or main menu |
+| Does the crash path work (live) | `game-cmd.ps1` | `"crash test"` | `darkness2_vr_crash.txt` gains a run header and a fingerprint; a `.dmp` lands in `dumps\`; `read-dump.py` decodes the exception |
+| Did the 30-minute protocol complete (live) | `soak.ps1` | `.\tools\soak.ps1 -Minutes 30` | exit 0, `byte reverts/changes: 0`, `exit: clean`; exit 4 with the log's last lines is the CEG failure shape |
 | Both eyes non-black on the mono screen | `xrsim-run.ps1` | `-Path tools\xrsim\mono.xrs` | a quad layer, both eyes non-black, equal bboxes; a black eye attributed by the `COMPOSITOR fault` / `APP fault` line |
 | The screen is head-locked | `xrsim-run.ps1` | `headlook.xrs` | the captured screen does NOT move under head yaw |
 | Which FOV write is honoured | `game-cmd.ps1` | `"camera eyetest"` | exactly one HONOURED verdict, the rest DISCARDED, then DONE |
@@ -96,13 +103,18 @@ the sequence rather than re-deriving the check.
 Every sequence has a negative control (a leg that must FAIL on the old behaviour), because a
 test that has never failed has never tested.
 
-## The end-to-end agent workflow (planned)
+## The end-to-end agent workflow (the flat loop runs today; the sim loop needs VR-241)
 
 ```powershell
-.\tools\xrsim-selftest.ps1                       # 0. the SIM is healthy
-.\tools\build.ps1; .\tools\install.ps1           # 1. build + install
-.\tools\xrsim-launch.ps1                         # 2. launch on the sim; throws unless runtime == d2-xrsim
-.\tools\boot.ps1 -Attach                         # 3. reach gameplay (-Attach is mandatory in sim mode)
+.\tools\build.ps1 -Release; .\tools\install.ps1 -Release   # 1. build + install (the ini diff prints)
+.\tools\launch-game.ps1 -WaitBanner              # 2. through Steam; the banner names the build
+.\tools\boot.ps1                                 # 3. title -> menu -> Continue -> gameplay, shots per step
+.\tools\game-cmd.ps1 "key esc tap 150" "shot pause"   # 4. drive and look
+.\tools\quit-game.ps1                            # 5. WM_CLOSE through the seam
+
+.\tools\xrsim-selftest.ps1 -Release              # 0. the SIM is healthy (runs today)
+.\tools\xrsim-launch.ps1                         # 2'. launch on the sim; throws unless runtime == d2vr-xrsim (VR-241)
+.\tools\boot.ps1                                 # 3'. reach gameplay
 .\tools\game-cmd.ps1 "status"                    # 4. the seam works; read status.json
 .\tools\xrsim-cmd.ps1 "reset" "head rot 0 0 0"   # 5. drive the rig and capture
 $a = .\tools\xrsim-shot.ps1 -Out "$env:TEMP\d2vr\head_0"
@@ -170,3 +182,7 @@ Comfort, judder, warp, world scale, the mono screen's size and distance, fusion,
 placement feel, whether the demon arms feel like the player's, whether a finisher is
 comfortable, anything about Virtual Desktop's own reprojection. Write the verdict in STATUS
 with the build id from the log's first line, in the tester's terms and never their words.
+
+What no longer needs a human (2026-09-25): launching, reaching gameplay, menus, checkpoint and
+level reloads, screenshots of the flat game, the crash path, quitting. The session does these
+through the harness above.

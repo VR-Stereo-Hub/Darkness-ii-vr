@@ -93,10 +93,30 @@ assuming an app-dir `d3d9.dll` proxy is picked up.
   driver-side (useless to us). Helix Mod published a 3D Vision fix for this game in 2012, which
   suggests the stock path was imperfect.
 
-Consequence for the mod: the frame comes out of a D3D9 (or D3D9Ex) device and must be carried
-into a D3D11 texture on the runtime's adapter for OpenXR, exactly the Dishonored arrangement.
-Whether the game creates its device through `Direct3DCreate9` or `Direct3DCreate9Ex`, and
-whether it presents with `Present` or `PresentEx`, is an S0.5 measurement.
+Consequence for the mod: the frame comes out of a D3D9Ex device and must be carried into a
+D3D11 texture on the runtime's adapter for OpenXR, exactly the Dishonored arrangement.
+
+### The create path (measured 2026-09-25, VR-231, two launches)
+
+- The engine's D3D9 init (`kDx9InitFn`, 0xCF2C30, s8) calls `GetProcAddress("Direct3DCreate9Ex")`
+  and, when the setting byte `Graphics.EnableDirect3D9Ex` (0x10E3BDC, default 1, registered at
+  0xEA7AA0) is set, **`Direct3DCreate9Ex(0x20, &out)`**; `Direct3DCreate9(0x20)` is the fallback
+  when the export is missing or the setting is 0. Measured: `Direct3DCreate9Ex(SDK=32)` entered
+  from our module, caller 0xCF2CCC (inside the init), once per run.
+- **`CreateDeviceEx`** on adapter 0, `D3DDEVTYPE_HAL`, behaviour flags 0x50
+  (`HARDWARE_VERTEXPROCESSING | MULTITHREADED`), first as a 16x16 windowed X8R8G8B8 device
+  (backbuffer count 1, no multisample, `D3DSWAPEFFECT_DISCARD`, no auto depth stencil,
+  `D3DPRESENT_INTERVAL_IMMEDIATE`), then **one `Reset`** to 2560x1440 fullscreen with the same
+  format and interval (the desktop's mode on the dev PC). `QueryInterface(IID_IDirect3DDevice9Ex)`
+  succeeds: the device is a 9Ex device.
+- The game presents with **`PresentEx(0, 0, 0, 0, flags)`**, never `Present`, from one thread
+  (the main thread, which also ran DllMain), through its present wrapper at 0x920EE0 (s8).
+  `EndScene` is called twice per present (two scene passes); its wrapper is 0x654FA0.
+- Present rate with the mod loaded and vsync as the game left it: about 64 Hz at the title, in
+  the pause menu and in the first alley in gameplay, over 2000 Hz on a loading screen (the
+  interval is IMMEDIATE; the game paces itself).
+- The window: class `EvolutionEvolutionGfxD3D`, title `The Darkness II`, 2560x1440 at 0,0,
+  style 0x14000000 (a popup without a caption: exclusive fullscreen).
 
 ## 3. Engine identity: Evolution Engine (Digital Extremes)
 
@@ -273,16 +293,89 @@ tentacle tip (T7).
 
 ## 6. Dead ends (do not re-hunt)
 
-None yet. Format: heading with the ticket and date, what was tried, the measurement that
-killed it, and what to do instead.
+Format: heading with the ticket and date, what was tried, the measurement that killed it, and
+what to do instead.
+
+### Finding the Present call site statically (VR-232, 2026-09-25)
+
+Tried: a census of `mov reg,[reg+0x44] ; call reg` shapes (the COM `Present` slot) over `.text`
+and its intersection with the `EndScene` shape (+0xA8). 1306 hits; the engine wraps the device
+in its own driver class whose vtable also has a slot at +0x44, so the shape is not the API
+call. Killed by: the three candidates the intersection produced were all engine-internal.
+Instead: the `Present` vtable hook logs its exe return address (0x920F2E on the first frame) and
+the function start is read from the padding before it. Runtime derivation, then byte-verify.
 
 ## 7. Evidence handling
 
-None yet. Format: what was lost, why, and the rule that prevents it. (Dishonored's first two:
-log rotation was one deep; the crash file carried no run identity.)
+Format: what was lost, why, and the rule that prevents it.
+
+- **A 64-bit PowerShell sees 7 of a 32-bit game's 110 modules** (2026-09-25). The first module
+  census from outside said "no app-dir d3d9.dll in the process", a false zero, while the
+  in-process loader list and the log said the opposite. `tools/module-census.ps1` now re-runs
+  itself under the 32-bit PowerShell. Rule: enumerate a 32-bit process from a 32-bit process.
+- **The backbuffer capture cannot show the Steam overlay.** `shot` reads the backbuffer inside
+  our Present hook, before the call goes on to the overlay's own hook, so an overlay screenshot
+  is always the plain frame. The overlay's presence is measured by its module
+  (`GameOverlayRenderer.dll`, loaded in both runs) and by its displacement of the unhandled
+  exception filter (re-armed once per run), not by a picture.
+- **A 60 ms key tap is not seen by the title screen; 400 ms is.** The gameswf title screen
+  polls slower than a frame. `tools/boot.ps1` holds Space for 400 ms; menus take 150 ms taps.
+- **`crash test` leaves three fingerprints, not one.** After the deliberate fault the game's own
+  handler path raises a stack overflow (0xC00000FD) and a second access violation inside our
+  module before the process ends; the first fingerprint and the minidump are the evidence, the
+  two follow-ons are the exit path.
 
 ## 8. Derivation records (addresses)
 
-None yet. Every entry: the symbol name used in `patterns.h`, the RVA, the byte-verify
-signature, HOW it was found (string xref, CTAB match, caller census, live probe), the date and
-the build fingerprint it was derived on.
+Every entry: the symbol name used in `patterns.h`, the VA (RVA = VA - 0x400000), the
+byte-verify signature, HOW it was found (string xref, caller census, live measurement), the
+date and the build. All entries below: build 2012-03-20 (TimeDateStamp 0x4F68A875, SizeOfImage
+0xDEC000, 14,291,512 bytes), derived 2026-09-25 with `tools/disasm-rva.py` and
+`tools/pe-xref.ps1` unless a line says "live".
+
+| Symbol | VA | Signature (first bytes) | Derivation |
+|---|---|---|---|
+| `kExeTimeDateStamp`, `kExeSizeOfImage`, `kExeFileSize` | - | 0x4F68A875, 0xDEC000, 14291512 | PE header + file size; checked at every launch (`fingerprint:` line); a mismatch refuses every code hook |
+| `kDx9InitFn` | 0xCF2C30 | `83 EC 1C 56 8B F1 83 7E 04 00` | xref of the string `D3D9.DLL` (0xF9DC80): pushed at 0xCF2C43 into the exe's LoadLibraryA wrapper. The function then runs the registry DirectX version check (0xAD5C50 -> 0xC471F0: `HKLM\SOFTWARE\Microsoft\DirectX\Version`, failure = `Menu/DirectXMissing`, too old = `Menu/DirectXOldVersion`), `GetProcAddress("Direct3DCreate9Ex")`, tests byte 0x10E3BDC, and creates. Detour length 6 (`sub esp,1Ch ; push esi ; mov esi,ecx`) |
+| `kDx9InitCaller` | 0xC27176 | `E8 B5 BA 0C 00` | `pe-xref` caller census of 0xCF2C30: exactly one E8 caller, no vtable references |
+| `kLoadLibraryWrapper` | 0xA556E0 | `55 8B EC 6A FE 68 28 66 09 01` | the target of the call at 0xCF2C48; an SEH frame around `call [LoadLibraryA]` (0xA55748) with no path manipulation; also loads `DINPUT8.DLL`, `xinput1_3.dll`, `KERNEL32.DLL` |
+| `kD3D9ExEnableFlag` | 0x10E3BDC | data byte | xref of the string `EnableDirect3D9Ex` (0xF52FD4) at 0xEA7AA2, section `Graphics`; the registration sets the byte to 1 at 0xEA7AC5; read at 0xCF2CBB. Read-only; logged at every launch |
+| `kMsgPumpFn` | 0xB2E5E0 | `83 EC 1C 53 55 56 57 8B F9` | the only reference to the `PeekMessageA` IAT slot (0xEEB3FC) is `mov ebx,[slot]` at 0xB2E651; the enclosing function begins after int3 padding at 0xB2E5E0 and is a `PeekMessageA` / `TranslateAcceleratorA` / `TranslateMessage` / `DispatchMessageA` loop. 0 E8 callers and 1 `.rdata` reference: a virtual method. Live: hits/s equals the present rate (64/s), so it runs once per tick. Detour length 5 |
+| `kPumpCallSite` -> `kPumpCallTarget` | 0xB2E6E9 -> 0x924B80 | `E8 92 64 DF FF` | the last call inside the pump; the target reads and decrements a global counter (0x10E2130) and returns it (17 static callers). The call-site canary rewrites the rel32 |
+| `kPresentWrapperFn` | 0x920EE0 | `55 56 57 8B F9 E8 B6 B1 B6 FF` | **live**: `PresentEx` returned into the exe at 0x920F2E on the first frame of both runs; the function begins after int3 padding at 0x920EE0 and calls device vtable slot 0x1E4/4 = 121 (`PresentEx`) with `(0,0,0,0,flags)`. 1 E8 caller (0xB36EF2). Detour length 5 |
+| `kEndSceneWrapperFn` | 0x654FA0 | `8B 81 64 29 00 00 8B 08` | **live**: `EndScene` returned into the exe at 0x654FB1; a 17-byte thunk `mov eax,[ecx+0x2964] ; mov ecx,[eax] ; mov edx,[ecx+0xA8] ; push eax ; call edx ; ret`. 0 E8 callers, 1 `.rdata` reference (virtual). Alternative hot site; not hooked |
+| `kSetDllDirectoryCall` (documented, not in patterns.h) | 0x452640 | - | xref of the string `SetDllDirectoryA` (0xF1A254): `GetProcAddress(kernel32, "SetDllDirectoryA")` then a call with the caller's string. Live: at our DllMain `GetDllDirectory` returned `<game dir>\/Tools/PhysX/x86/`, so it runs before the D3D9 load and points at the PhysX folder |
+
+## 9. R0 verdict: the loading route (VR-231, 2026-09-25)
+
+**Route (a) wins: a `d3d9.dll` next to `DarknessII.exe`, loaded by the exe's own bare-name
+`LoadLibraryA("D3D9.DLL")`.** Measured, not assumed:
+
+| Measurement | Result |
+|---|---|
+| How the exe loads the renderer | `LoadLibraryA("D3D9.DLL")` through the wrapper at 0xA556E0 (s8); no path prepended; `LoadLibraryExA/W` are not imported, so no `LOAD_LIBRARY_SEARCH_SYSTEM32` route exists |
+| The search directory at that moment | The application directory (the exe's folder) is searched first; the exe HAD called `SetDllDirectoryA("<game dir>/Tools/PhysX/x86/")` before the load (the value `GetDllDirectory` returned inside our DllMain), which replaces the current-directory slot in the search order and cannot displace the application directory |
+| Where the loader took our module from | `D:\...\Darkness II\D3D9.DLL` (`GetModuleFileName` of our own module), 529 ms after process creation, on the main thread, with the game's `Tools\` DLLs (`steam_api.dll`, PhysX) and `GameOverlayRenderer.dll` already in the loader list |
+| The create call entered from our module | `Direct3DCreate9Ex(SDK=32)`, caller 0xCF2CCC inside the D3D9 init, call #1, in **2 of 2** launches so far (the count continues with every launch of the harness; each run's log has the line) |
+| The system d3d9 beside us | `C:\WINDOWS\system32\d3d9.dll` (SysWOW64 under redirection) loaded by us as the backend; the 32-bit module census from outside shows both |
+| The Steam overlay | `GameOverlayRenderer.dll` loaded in both runs; it displaced the unhandled exception filter once per run (our re-arm logged it), which is the overlay installing its own hooks. A picture of it is not obtainable from the backbuffer (s7) |
+| Exports forwarded | all 23 of the system table, by ordinal for the six unnamed ones (`tests/golden/d3d9-exports.txt`); the game resolved `Direct3DCreate9Ex` by name |
+
+**Fallbacks**, in order, if a future Windows or Steam change stops the app-dir DLL being chosen:
+(b) an `xinput1_3.dll` proxy (delay-loaded by the exe from the same search order) that hooks
+the exe's `LoadLibraryA` wrapper at 0xA556E0 (s8) or its `GetProcAddress` result for
+`Direct3DCreate9Ex`; (c) a suspended-launch injector, which needs Steam's `-applaunch` and is
+the last resort because it changes how the game is started.
+
+**Consequences recorded**: the game is a D3D9Ex host (s2); every mod hook that must precede the
+device is installed from the `Direct3DCreate9Ex` wrapper, never DllMain; nothing about the route
+depends on the working directory.
+
+## 10. R1: in-memory hooks under CEG (VR-232, measurement in progress)
+
+Four canaries (`src/game/darkness2/canaries.cpp`), byte-verified, installed from the first
+present: `cold` at `kDx9InitFn`, `tick` at `kMsgPumpFn`, `callsite` at `kPumpCallSite`, `hot`
+at `kPresentWrapperFn`. Every second: hits/s and a re-read of the patched bytes. The 30-minute
+protocol (`tools/soak.ps1`): gameplay from the save, a menu round trip at minute 10, a checkpoint
+reload at minute 15, a level restart at minute 20, periodic movement and looks, screenshots
+every 5 minutes, `quit` at the end. The verdict is written below when the run completes.

@@ -40,8 +40,9 @@ handoff.
   ported (method only). Every address in `src/game/darkness2/patterns.h` has its derivation
   in ENGINE_NOTES s8.
 - **Branch and PR**: one branch for VR-231 + VR-239 + VR-232 + VR-236 (the user's decision),
-  PR against `staging` with `Fixes VR-231, VR-239, VR-232, VR-236`. Not merged; the merge is
-  the user's.
+  PR #2 against `staging` (https://github.com/VR-Stereo-Hub/Darkness-ii-vr/pull/2) with
+  `Fixes VR-231, VR-239, VR-232, VR-236`. Not merged; the merge is the user's, then the four
+  tickets go to Done through the MCP. They are In Review with the PR attached.
 
 ## Next steps (in order)
 

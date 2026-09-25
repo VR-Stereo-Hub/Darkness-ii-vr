@@ -47,6 +47,55 @@ are measured; the Dishonored values (standing-still noise about 0.4 mean-abs-dif
 change 4 to 7, `nonBlackPct > 50` in gameplay, frames per second near the refresh rate) are
 the shape, not the numbers.
 
+### What the simulator can drive
+
+Everything a headset and two controllers produce, without either: the head pose (`head rot
+<yaw> <pitch> <roll>`, `head pos <x> <y> <z>`), each hand's grip and aim pose (`hand l|r pose
+...`, and `hand r move ...` for a gesture that must be seen as motion, not a teleport), every
+controller button, trigger and stick, deterministic frame stepping, a focus grant, and per-eye
+compositor captures with source statistics. What it cannot judge is perceptual: comfort,
+judder, warp, whether a thing feels right. Those stay tier 3.
+
+### The sequence catalogue (planned; each lands with the ticket that needs it)
+
+`.xrs` sequences live in `tools/xrsim/`. A sequence is the gate for its ticket: the PR names
+it and its result. Each is written with the ticket, so a future agent testing the feature runs
+the sequence rather than re-deriving the check.
+
+| Sequence | Asserts | Lands with |
+|---|---|---|
+| `smoke.xrs` | the runtime layer reaches `pipeline READY`, presents flow for 60 frames, no errors | VR-240 |
+| `mono.xrs` | a quad layer, both eyes non-black, equal bboxes, head-locked under yaw | VR-241 |
+| `headlook.xrs` | +90 head yaw gives +90 view, the stick adds on top, pitch absolute, no drift over 60 s | VR-245 |
+| `world-6dof.xrs` | a 30 cm lean moves the camera 30 cm against known geometry; the neck pivot error under 2 cm | VR-246 |
+| `stereo.xrs`, `reentry.xrs` | two projection views, `eyeSeparationM == IPD`, left vs right diff above noise, presents = 2x ticks, `L/s == R/s`, no untagged presents | VR-249 |
+| `eye-check.ps1` legs | the eye pairing holds across single/double transitions, menus, loads; no fisheye (claim == rendered FOV) | VR-249, VR-252 |
+| `fov.xrs` | 200 FOV samples across a load, a cinematic, a zoom and a death return to the same value | VR-252 |
+| `quality.xrs` | 100 to 70 percent live: three size lines agree, FOV readback unchanged, both eyes non-black at 50 and 200 | VR-247 |
+| `camshake.xrs` | per-lever A/B: camera position variance zero with the lever on, non-zero off, for an explosion, a jump, a shot | VR-253 |
+| `cinematic.xrs` | the opening scene: horizon within 2 degrees, the cinematic flag flips within one tick of start and end | VR-254 |
+| `menus.xrs` | every menu, loading and Bink state classified, the quad re-parks per menu, no black frame at transitions | VR-255 |
+| `flags.xrs` | every gameplay flag changes at least once and within one tick of its event | VR-256 |
+| `jump.xrs` | an injected camera jump is detected with its owner named; a clean run reports zero | VR-257 |
+| `pad.xrs` | every pad control has an action; the chords; the first-chapter walk-through on the pad | VR-258 |
+| `decouple.xrs` | a 90 degree head yaw leaves the body yaw within 1 degree; the stick still turns the body | VR-262 |
+| `anim.xrs` | a masked anim never starts; `anim play` plays; identity on `ARM2` straightens the arm and the gun follows; hand-back within one tick of the end event | VR-259 |
+| `model.xrs` | the rig enumerated; `model hide JackieBody` leaves floating hands; scale measured on the palm | VR-261 |
+| `hands.xrs` | a 20 cm controller move is a 20 cm hand move within one tick; position holds through a head turn; a gun on `WEAPON1` follows | VR-264 |
+| `fire.xrs` | each hand's decal within 1 cm of its ray at 5 m while the other hand fires; two targets at once; the model ray latched per class | VR-265 |
+| `dualwield.xrs` | the left trigger fires the left gun with the swap option either way; camera delta on dual aim zero | VR-266 |
+| `reload.xrs` | the gun root within 3 cm of the controller through a reload; Aim starts logged as suppressed | VR-267 |
+| `shoulders.xrs` | the shoulder anchor within 2 cm through a 90 degree head yaw; arms above the chest line looking down; idle amplitude on bone 16 within 5 percent | VR-263 |
+| `slash.xrs` | 8 of 8 directions trigger the matching anim; a reach and a body turn do not; one swipe fire per swing | VR-269 |
+| `grab.xrs` | 19 of 20 grabs fetch the pointed object; a throw leaves along the controller within 3 degrees; the held object stays at the tip through a head turn | VR-270 |
+| `finishers.xrs` | all 14 finishers: horizon within 3 degrees, hand-back within one tick, no pop over 2 cm | VR-271 |
+| `hud.xrs` | every movie tagged; each hand's reticle within 1 cm of its decal; wrist elements follow within one tick | VR-273, VR-274 |
+| `f10.xrs` | the panel opens on the chord, a slider set and read back, save-on-change persists, reset restores | VR-275 |
+| `crouch-turn.xrs` | crouch state set within one tick below the threshold with hysteresis; a snap turn is exactly the step with no intermediate pose | VR-276 |
+
+Every sequence has a negative control (a leg that must FAIL on the old behaviour), because a
+test that has never failed has never tested.
+
 ## The end-to-end agent workflow (planned)
 
 ```powershell

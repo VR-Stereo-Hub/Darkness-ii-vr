@@ -50,6 +50,14 @@ handoff.
 
 None. The research gate can start.
 
+**Note on the board (2026-09-25):** the Linear workspace hit its free issue limit after
+VR-281. Two items that were meant to be their own tickets were folded into existing ones
+instead: the headset-matched FOV into VR-252 (with world scale and IPD) and the live 50 to
+200 percent render-quality lever into VR-247 (with the render size). Until the workspace has
+room, a session that needs a new ticket should first look for an existing ticket to widen, and
+say so on it; if none fits, record the work in `docs/ROADMAP.md` with "not yet filed" and
+tell the user.
+
 ## The user's UI checklist (Linear settings the MCP cannot reach)
 
 1. Settings > Agents > Additional guidance: paste the corrected block from

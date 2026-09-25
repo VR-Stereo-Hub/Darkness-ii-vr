@@ -124,7 +124,9 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 - **Deliverable**: the single call site patched to draw twice per tick with the other eye's
   camera; eye tags through a ring paired by the per-present camera step; the swapped-eye fix;
   the cadence beat (a render size that makes one tick one display period at 90 Hz); the
-  judder fix (submit the pose the image was rendered with); world scale and IPD.
+  judder fix (submit the pose the image was rendered with); world scale and IPD; **render
+  quality from 50 to 200 percent of the judged size, changed live in F10 and set in the
+  launcher**, with the FOV following.
 - **Done when**:
   - [ ] A vertical edge at 2 m shows the measured disparity for the runtime's IPD within 5
         percent

@@ -213,6 +213,11 @@ matters.
 If the work is not in the current milestone and is not urgent, it still gets filed. Filing is
 cheap; remembering is not.
 
+**Workspace issue limit.** On 2026-09-25 the free workspace refused new issues after VR-281.
+If `save_issue` returns the limit error: widen an existing ticket that genuinely covers the
+work and say so in its description; otherwise record the item in `docs/ROADMAP.md` under the
+stage it belongs to, marked "not yet filed", and tell the user. Never drop the work silently.
+
 ### 2. Branch
 
 ```

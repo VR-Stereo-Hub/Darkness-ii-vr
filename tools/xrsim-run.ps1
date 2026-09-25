@@ -23,6 +23,11 @@
 #   @capassert <a.b> <op> <v>  assert on the LAST @shot's capture JSON (dotted path,
 #                         e.g. stats.bboxPctL, layers.0.type): the per-eye numbers
 #                         @assert cannot see (state.json holds only the summary).
+#   @capsame <a.b> <c.d> [tol]   two fields of the LAST capture agree within tol
+#                         (default 1): the eyes see the same bounding box.
+#   @capdiff <a.b> [tol]  the field is the same in the LAST capture and the one
+#                         BEFORE it, within tol (default 1): the picture did not
+#                         move between two shots (the head-locked contract).
 #   @mark                 forget the mod log written so far: @log and @nolog only
 #                         look at what the mod wrote AFTER the last mark (the
 #                         start of the sequence is the first mark).
@@ -91,6 +96,27 @@ function Read-ModLogSince([long]$from) {
 
 $shots = @()
 $n = 0
+# A dotted path into a capture object (xrsim-shot.ps1's Raw); a numeric part indexes an array.
+function Get-CapField($shot, [string]$k) {
+    if ($null -eq $shot) { throw "no @shot capture before '$k'" }
+    $v = $shot.Raw
+    foreach ($part in $k -split '\.') {
+        if ($null -eq $v) { break }
+        if ($part -match '^\d+$' -and $v -is [array]) { $v = $v[[int]$part] } else { $v = $v.$part }
+    }
+    if ($null -eq $v) { throw "the capture JSON has no '$k'" }
+    return $v
+}
+# The distance between two capture fields: numbers, or arrays compared element-wise
+# (bboxPctL is [w%, h%], bboxL is [x0, y0, x1, y1]); the largest element difference.
+function Get-CapDistance($a, $b) {
+    $aa = @($a); $bb = @($b)
+    if ($aa.Count -ne $bb.Count) { throw "fields differ in shape ($($aa.Count) vs $($bb.Count) elements)" }
+    $d = 0.0
+    for ($i = 0; $i -lt $aa.Count; $i++) { $e = [math]::Abs([double]$aa[$i] - [double]$bb[$i]); if ($e -gt $d) { $d = $e } }
+    return $d
+}
+function Format-CapField($v) { return (@($v) | ForEach-Object { "$_" }) -join "," }
 $total = ($Steps | Where-Object { $_.Trim() -and -not $_.Trim().StartsWith('#') }).Count
 
 try {
@@ -126,6 +152,21 @@ try {
                 $hold = if ($Matches[4]) { [int]$Matches[4] } else { 400 }
                 $keys = @(1..$rep | ForEach-Object { $Matches[1] })
                 & $keyScript -Hold $hold -Gap $gap @keys | Out-Null
+            }
+            elseif ($line -match '^@capsame\s+(\S+)\s+(\S+)(?:\s+([\d.]+))?\s*$') {
+                $a = Get-CapField $shots[-1] $Matches[1]; $b = Get-CapField $shots[-1] $Matches[2]
+                $tol = if ($Matches[3]) { [double]$Matches[3] } else { 1.0 }
+                $d = Get-CapDistance $a $b
+                if ($d -gt $tol) { throw "CAPSAME FAILED: $($Matches[1])=$(Format-CapField $a) vs $($Matches[2])=$(Format-CapField $b) differ by $d (> $tol)" }
+                Write-Host "      capture $($Matches[1]) = $(Format-CapField $a), $($Matches[2]) = $(Format-CapField $b) (within $tol)"
+            }
+            elseif ($line -match '^@capdiff\s+(\S+)(?:\s+([\d.]+))?\s*$') {
+                if ($shots.Count -lt 2) { throw "CAPDIFF FAILED: needs two @shot captures before '$($Matches[1])'" }
+                $a = Get-CapField $shots[-2] $Matches[1]; $b = Get-CapField $shots[-1] $Matches[1]
+                $tol = if ($Matches[2]) { [double]$Matches[2] } else { 1.0 }
+                $d = Get-CapDistance $a $b
+                if ($d -gt $tol) { throw "CAPDIFF FAILED: $($Matches[1]) moved from $(Format-CapField $a) to $(Format-CapField $b) between the last two captures (by $d, > $tol)" }
+                Write-Host "      capture $($Matches[1]): $(Format-CapField $a) -> $(Format-CapField $b) (within $tol)"
             }
             elseif ($line -match '^@capassert\s+(\S+)\s+(eq|ne|gt|ge|lt|le)\s+(.+)$') {
                 $k = $Matches[1]; $op = $Matches[2]; $v = $Matches[3]

@@ -3,11 +3,11 @@
 #include <d3d9.h>
 #include <stdio.h>
 #include <string.h>
-#include "core/framework/capture.h"
+#include "core/framework/shot.h"
 #include "core/util/log.h"
 #include "core/util/paths.h"
 
-namespace d2vr::capture {
+namespace d2vr::shot {
 namespace {
 
 volatile LONG g_pending = 0;
@@ -115,4 +115,4 @@ void on_reset() { release_sysmem(); }
 unsigned long count() { return g_count; }
 const char* last_path() { return g_last; }
 
-} // namespace d2vr::capture
+} // namespace d2vr::shot

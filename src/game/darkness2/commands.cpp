@@ -12,7 +12,7 @@
 #include "core/framework/command.h"
 #include "core/framework/status.h"
 #include "core/framework/frame_hooks.h"
-#include "core/framework/capture.h"
+#include "core/framework/shot.h"
 #include "core/input/inject.h"
 #include "core/util/crash.h"
 #include "core/util/diag.h"
@@ -134,11 +134,11 @@ void status_provider(d2vr::status::Writer& w)
         w.kv("commands", (unsigned long)d2vr::command::lines());
         w.kv("commandBatches", (unsigned long)d2vr::command::sequence());
         w.kv("statusWrites", d2vr::status::writes());
-        w.kv("shots", d2vr::capture::count());
+        w.kv("shots", d2vr::shot::count());
         w.kv("inputActions", d2vr::input::actions_done());
         w.kv("ticks", g_ticks);
     w.end_obj();
-    w.kv("lastShot", d2vr::capture::last_path());
+    w.kv("lastShot", d2vr::shot::last_path());
     w.kv_hex("window", (unsigned long)(uintptr_t)d2vr::input::game_window());
     w.kv("teardown", d2vr::crash::teardown_seen());
 }
@@ -156,7 +156,7 @@ void present_tick(IDirect3DDevice9*, double nowMs)
     canaries::tick(nowMs);
     D2VR_LOG_EVERY_MS(D2VR_CAT, d2vr::log::Level::Info, 30000,
         "heartbeat: %lu presents at %.1f Hz, %lu commands, %lu status writes, %lu shots",
-        d2vr::frame::presents(), d2vr::frame::present_hz(), d2vr::command::lines(), d2vr::status::writes(), d2vr::capture::count());
+        d2vr::frame::presents(), d2vr::frame::present_hz(), d2vr::command::lines(), d2vr::status::writes(), d2vr::shot::count());
 }
 
 } // namespace

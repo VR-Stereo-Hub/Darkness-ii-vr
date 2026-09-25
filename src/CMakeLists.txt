@@ -44,7 +44,7 @@ add_library(d2vr_proxy SHARED
     core/framework/command.cpp     core/framework/command.h
     core/framework/status.cpp      core/framework/status.h
     core/framework/frame_hooks.cpp core/framework/frame_hooks.h
-    core/framework/capture.cpp     core/framework/capture.h
+    core/framework/shot.cpp        core/framework/shot.h
     core/input/inject.cpp          core/input/inject.h
     game/darkness2/game.h
     game/darkness2/patterns.h

@@ -7,7 +7,7 @@
 #include "core/framework/frame_hooks.h"
 #include "core/framework/command.h"
 #include "core/framework/status.h"
-#include "core/framework/capture.h"
+#include "core/framework/shot.h"
 #include "core/hooks/vtable.h"
 #include "core/util/clock.h"
 #include "core/util/crash.h"
@@ -145,7 +145,7 @@ void on_present(IDirect3DDevice9* dev, bool ex, uintptr_t ret)
     d2vr::command::poll(now);
     d2vr::status::tick(now);
     if ((g_presents & 255) == 0) d2vr::crash::rearm();
-    d2vr::capture::tick(dev);
+    d2vr::shot::tick(dev);
     if (g_tick) g_tick(dev, now);
 }
 
@@ -173,7 +173,7 @@ HRESULT STDMETHODCALLTYPE hkReset(IDirect3DDevice9* self, D3DPRESENT_PARAMETERS*
     InterlockedIncrement(&g_resets);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "Reset #%ld", (long)g_resets);
     log_params("Reset", g_info.adapter, D3DDEVTYPE_HAL, g_info.window, g_info.behavior, pp, nullptr);
-    d2vr::capture::on_reset();
+    d2vr::shot::on_reset();
     HRESULT hr = g_origReset(self, pp);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "Reset -> 0x%08lx", (unsigned long)hr);
     return hr;
@@ -184,7 +184,7 @@ HRESULT STDMETHODCALLTYPE hkResetEx(IDirect3DDevice9Ex* self, D3DPRESENT_PARAMET
     InterlockedIncrement(&g_resets);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "ResetEx #%ld", (long)g_resets);
     log_params("ResetEx", g_info.adapter, D3DDEVTYPE_HAL, g_info.window, g_info.behavior, pp, mode);
-    d2vr::capture::on_reset();
+    d2vr::shot::on_reset();
     HRESULT hr = g_origResetEx(self, pp, mode);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "ResetEx -> 0x%08lx", (unsigned long)hr);
     return hr;

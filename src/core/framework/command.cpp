@@ -2,7 +2,7 @@
 #define D2VR_CAT ::d2vr::log::Cat::cmd
 #include "core/framework/command.h"
 #include "core/framework/status.h"
-#include "core/framework/capture.h"
+#include "core/framework/shot.h"
 #include "core/input/inject.h"
 #include "core/util/crash.h"
 #include "core/util/log.h"
@@ -104,7 +104,7 @@ bool core_command(const char* cmd, const char* args)
         return true;
     }
     if (!strcmp(cmd, "shot")) {
-        d2vr::capture::request(args[0] ? args : "shot");
+        d2vr::shot::request(args[0] ? args : "shot");
         return true;
     }
     if (!strcmp(cmd, "key") || !strcmp(cmd, "mouse") || !strcmp(cmd, "type") || !strcmp(cmd, "focus") ||

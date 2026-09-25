@@ -15,11 +15,14 @@
 #                         cost a `vraim on` in the first version of this file.
 #   @assert <k> <op> <v>  assert on state.json (ops: eq ne gt ge lt le)
 #   @fps <min> [secs]     measure frames/s over a window and fail below <min>.
-#   @key <name> [n] [ms]  press a keyboard key in the GAME window (game-key.ps1:
-#                         scancode injection; foregrounds the game). Escape is the
-#                         pause menu, so "@key Escape" twice is a pause/resume.
-#                         This is the session-33 oracle: the symptom there was a
-#                         frame-rate COLLAPSE, which no state field records.
+#   @key <name> [n] [gapMs] [holdMs]
+#                         press a keyboard key in the GAME window n times (game-key.ps1:
+#                         the mod's own SendInput lane). Hold defaults to 400 ms: the
+#                         title and the main menu ignore a short tap (TRAPS s12); the
+#                         pause menu takes 150. "@key esc 2 600" is a pause/resume.
+#   @capassert <a.b> <op> <v>  assert on the LAST @shot's capture JSON (dotted path,
+#                         e.g. stats.bboxPctL, layers.0.type): the per-eye numbers
+#                         @assert cannot see (state.json holds only the summary).
 #   @mark                 forget the mod log written so far: @log and @nolog only
 #                         look at what the mod wrote AFTER the last mark (the
 #                         start of the sequence is the first mark).
@@ -117,10 +120,33 @@ try {
                 & $gameCmd @modCmds | Out-Null
                 Start-Sleep -Milliseconds $ModPollMs
             }
-            elseif ($line -match '^@key\s+(\S+)(?:\s+(\d+))?(?:\s+(\d+))?') {
-                $rep = if ($Matches[2]) { [int]$Matches[2] } else { 1 }
-                $del = if ($Matches[3]) { [int]$Matches[3] } else { 500 }
-                & $keyScript -Key $Matches[1] -Repeat $rep -Delay $del | Out-Null
+            elseif ($line -match '^@key\s+(\S+)(?:\s+(\d+))?(?:\s+(\d+))?(?:\s+(\d+))?') {
+                $rep  = if ($Matches[2]) { [int]$Matches[2] } else { 1 }
+                $gap  = if ($Matches[3]) { [int]$Matches[3] } else { 500 }
+                $hold = if ($Matches[4]) { [int]$Matches[4] } else { 400 }
+                $keys = @(1..$rep | ForEach-Object { $Matches[1] })
+                & $keyScript -Hold $hold -Gap $gap @keys | Out-Null
+            }
+            elseif ($line -match '^@capassert\s+(\S+)\s+(eq|ne|gt|ge|lt|le)\s+(.+)$') {
+                $k = $Matches[1]; $op = $Matches[2]; $v = $Matches[3]
+                if ($shots.Count -eq 0) { throw "CAPASSERT FAILED: no @shot before '$k'" }
+                $actual = $shots[-1].Raw
+                foreach ($part in $k -split '\.') {
+                    if ($null -eq $actual) { break }
+                    if ($part -match '^\d+$' -and $actual -is [array]) { $actual = $actual[[int]$part] } else { $actual = $actual.$part }
+                }
+                if ($null -eq $actual) { throw "CAPASSERT FAILED: the capture JSON has no '$k'" }
+                if ($actual -is [bool]) { $actual = "$actual".ToLower() }
+                $ok = switch ($op) {
+                    'eq' { "$actual" -eq $v }
+                    'ne' { "$actual" -ne $v }
+                    'gt' { [double]$actual -gt [double]$v }
+                    'ge' { [double]$actual -ge [double]$v }
+                    'lt' { [double]$actual -lt [double]$v }
+                    'le' { [double]$actual -le [double]$v }
+                }
+                if (-not $ok) { throw "CAPASSERT FAILED: $k ($actual) $op $v" }
+                Write-Host "      capture $k = $actual"
             }
             elseif ($line -match '^@mark\s*$') {
                 $script:logMark = if (Test-Path $modLog) { (Get-Item $modLog).Length } else { 0 }

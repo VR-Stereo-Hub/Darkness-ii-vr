@@ -4,11 +4,17 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <intrin.h>
+#include <stdio.h>
+#include <string.h>
 #include "core/framework/frame_hooks.h"
 #include "core/framework/command.h"
 #include "core/framework/status.h"
 #include "core/framework/shot.h"
+#include "core/gfx/d3d11_device.h"
+#include "core/gfx/d3d9ex_host.h"
+#include "core/gfx/stereo.h"
 #include "core/hooks/vtable.h"
+#include "core/vr/openxr_runtime.h"
 #include "core/util/clock.h"
 #include "core/util/crash.h"
 #include "core/util/log.h"
@@ -115,6 +121,110 @@ void log_params(const char* which, UINT adapter, D3DDEVTYPE type, HWND focus, DW
     g_info.window = pp->hDeviceWindow ? pp->hDeviceWindow : focus; g_info.behavior = (unsigned)flags;
 }
 
+// XR pose (meters, quaternion; XR LOCAL space: right +X, up +Y, forward -Z)
+// -> the 3x4 device-to-tracking matrix the stereo seam carries (the Dishonored shape).
+void pose_to_3x4(const d2vr::vr::HeadPose& p, float m[3][4])
+{
+    const float xx = p.qx * p.qx, yy = p.qy * p.qy, zz = p.qz * p.qz;
+    const float xy = p.qx * p.qy, xz = p.qx * p.qz, yz = p.qy * p.qz;
+    const float wx = p.qw * p.qx, wy = p.qw * p.qy, wz = p.qw * p.qz;
+    m[0][0] = 1 - 2 * (yy + zz); m[0][1] = 2 * (xy - wz);     m[0][2] = 2 * (xz + wy);
+    m[1][0] = 2 * (xy + wz);     m[1][1] = 1 - 2 * (xx + zz); m[1][2] = 2 * (yz - wx);
+    m[2][0] = 2 * (xz - wy);     m[2][1] = 2 * (yz + wx);     m[2][2] = 1 - 2 * (xx + yy);
+    m[0][3] = p.px; m[1][3] = p.py; m[2][3] = p.pz;
+}
+
+// The session's coming and going, named once per transition so a log can say
+// which runtime served the run (and the crash file can carry it). These are the
+// lines tools\xrsim-launch.ps1 waits for: `xr: runtime "<name>"` and
+// `xr: pipeline READY`.
+bool g_xrLive = false;
+void track_session()
+{
+    static bool namedRuntime = false;
+    if (!namedRuntime && strcmp(d2vr::vr::runtime_name(), "none") != 0) {
+        namedRuntime = true;
+        D2VR_LOG(d2vr::log::Cat::xr, d2vr::log::Level::Info, "xr: runtime \"%s\" (instance up; session %s)",
+                 d2vr::vr::runtime_name(), d2vr::vr::session_state_name());
+    }
+    const bool live = d2vr::vr::session_live();
+    if (live != g_xrLive) {
+        g_xrLive = live;
+        if (live) {
+            char ctx[160];
+            _snprintf(ctx, sizeof(ctx), "backend=openxr runtime=\"%s\" stereo=%s", d2vr::vr::runtime_name(),
+                      d2vr::stereo::active_name());
+            ctx[sizeof(ctx) - 1] = 0;
+            d2vr::crash::set_context(ctx);
+            D2VR_LOG(d2vr::log::Cat::xr, d2vr::log::Level::Info, "xr: runtime \"%s\" - session live", d2vr::vr::runtime_name());
+        } else {
+            D2VR_LOG(d2vr::log::Cat::xr, d2vr::log::Level::Info, "xr: session gone (%s)", d2vr::vr::session_state_name());
+        }
+    }
+    static bool readySaid = false;
+    if (live && !readySaid && d2vr::vr::ever_focused()) {
+        readySaid = true;
+        D2VR_LOG(d2vr::log::Cat::xr, d2vr::log::Level::Info, "xr: pipeline READY - frames flow to the headset from here");
+    }
+}
+
+// The VR work on the present path is SEH-guarded as a whole (VR-241's blast
+// radius: a fault here is a black screen or a crash on every frame). One fault
+// poisons the VR work for the session and the game runs flat; the seam and
+// status.json keep going so the log can say what happened.
+volatile LONG g_vrPoisoned = 0;
+unsigned long g_submits = 0;
+
+void present_vr_head()
+{
+    // Present-head: the runtime layer brings the session up, pumps events, waits
+    // for the frame (this is what paces the game to the headset), begins it and
+    // locates the head. Then the seam learns the head for this frame.
+    d2vr::vr::on_present_begin();
+    track_session();
+    d2vr::stereo::FrameInput in;
+    in.frame = (uint32_t)g_presents;
+    d2vr::vr::HeadPose hp;
+    if (d2vr::vr::peek_head_pose(hp)) { pose_to_3x4(hp, in.head); in.headOk = true; }
+    float hh = 0.0f, hv = 0.0f;
+    if (d2vr::vr::headset_half_fov_deg(&hh, &hv) && hh > 0.0f) { in.fovOk = true; in.halfFovDeg[0] = hh; in.halfFovDeg[1] = hv; }
+    float sep = 0.0f;
+    if (d2vr::vr::eye_separation_m(&sep)) in.ipdM = sep;
+    d2vr::vr::recommended_eye_size(&in.eyeW, &in.eyeH);
+    d2vr::stereo::begin_frame(in);
+}
+
+void present_vr_tail(IDirect3DDevice9* dev)
+{
+    // Present-tail: the method turns the game's frame into the eye texture; the
+    // runtime shows it. A null texture still ends the XR frame (the runtime
+    // re-submits its last layer rather than a black frame).
+    d2vr::stereo::FrameDevices devs;
+    devs.dev9 = dev;
+    devs.dev11 = d2vr::d3d11::device(&devs.ctx11);
+    d2vr::stereo::FrameOutput out;
+    d2vr::stereo::end_frame(devs, out);
+    if (out.tex) ++g_submits;
+    d2vr::vr::on_present_end(out.tex);
+}
+
+int guard_filter(unsigned code, const char* where)
+{
+    InterlockedExchange(&g_vrPoisoned, 1);
+    D2VR_ERROR("present: EXCEPTION 0x%08x in the VR %s - VR work POISONED for this session, the game runs flat "
+               "(darkness2_vr_crash.txt has the fingerprint if the handler saw it first)", code, where);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+void present_vr(IDirect3DDevice9* dev, bool head)
+{
+    if (g_vrPoisoned) return;
+    __try {
+        if (head) present_vr_head(); else present_vr_tail(dev);
+    } __except (guard_filter(GetExceptionCode(), head ? "present-head" : "present-tail")) {
+    }
+}
+
 void on_present(IDirect3DDevice9* dev, bool ex, uintptr_t ret)
 {
     InterlockedIncrement(&g_presents);
@@ -142,23 +252,48 @@ void on_present(IDirect3DDevice9* dev, bool ex, uintptr_t ret)
         D2VR_LOG_EVERY_MS(D2VR_CAT, d2vr::log::Level::Debug, 10000, "present: %.1f Hz, %ld total", g_hz, (long)g_presents);
     }
     if (g_disabled) return;
+    // Present-head first: the frame wait is what paces the game, and the head
+    // pose the seam hands the game tick is the one located for THIS frame.
+    present_vr(dev, true);
     d2vr::command::poll(now);
     d2vr::status::tick(now);
     if ((g_presents & 255) == 0) d2vr::crash::rearm();
     d2vr::shot::tick(dev);
     if (g_tick) g_tick(dev, now);
+    present_vr(dev, false);
+}
+
+// The codes only a 9Ex device returns (the game never handles them); the first
+// of each is named so a GPU timeout reads as one.
+void note_present_result(HRESULT hr)
+{
+    if (hr == D3D_OK) return;
+    if (hr == D3DERR_DEVICEHUNG)
+        D2VR_LOG_FIRST_N(D2VR_CAT, d2vr::log::Level::Error, 3, "device: PresentEx -> D3DERR_DEVICEHUNG (a GPU timeout; the 9Ex device does not go lost, the game may not notice)");
+    else if (hr == D3DERR_DEVICEREMOVED)
+        D2VR_LOG_FIRST_N(D2VR_CAT, d2vr::log::Level::Error, 3, "device: PresentEx -> D3DERR_DEVICEREMOVED (the adapter went away)");
+    else if (hr == S_PRESENT_OCCLUDED)
+        D2VR_LOG_FIRST_N(D2VR_CAT, d2vr::log::Level::Info, 3, "device: PresentEx -> S_PRESENT_OCCLUDED (the window is covered; the 9Ex device keeps presenting)");
+    else if (hr == S_PRESENT_MODE_CHANGED)
+        D2VR_LOG_FIRST_N(D2VR_CAT, d2vr::log::Level::Info, 3, "device: PresentEx -> S_PRESENT_MODE_CHANGED (the desktop mode changed under a 9Ex device)");
+    else
+        D2VR_LOG_FIRST_N(D2VR_CAT, d2vr::log::Level::Warn, 3, "device: PresentEx -> 0x%08lx", (unsigned long)hr);
 }
 
 HRESULT STDMETHODCALLTYPE hkPresent(IDirect3DDevice9* self, const RECT* a, const RECT* b, HWND c, const RGNDATA* d)
 {
     on_present(self, false, (uintptr_t)_ReturnAddress());
-    return g_origPresent(self, a, b, c, d);
+    const HRESULT hr = g_origPresent(self, a, b, c, d);
+    note_present_result(hr);
+    return hr;
 }
 
 HRESULT STDMETHODCALLTYPE hkPresentEx(IDirect3DDevice9Ex* self, const RECT* a, const RECT* b, HWND c, const RGNDATA* d, DWORD flags)
 {
     on_present((IDirect3DDevice9*)self, true, (uintptr_t)_ReturnAddress());
-    return g_origPresentEx(self, a, b, c, d, flags);
+    const HRESULT hr = g_origPresentEx(self, a, b, c, d, flags);
+    note_present_result(hr);
+    return hr;
 }
 
 HRESULT STDMETHODCALLTYPE hkEndScene(IDirect3DDevice9* self)
@@ -173,6 +308,7 @@ HRESULT STDMETHODCALLTYPE hkReset(IDirect3DDevice9* self, D3DPRESENT_PARAMETERS*
     InterlockedIncrement(&g_resets);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "Reset #%ld", (long)g_resets);
     log_params("Reset", g_info.adapter, D3DDEVTYPE_HAL, g_info.window, g_info.behavior, pp, nullptr);
+    d2vr::stereo::on_reset();   // the hkReset law: the carry's DEFAULT-pool surfaces go before the reset
     d2vr::shot::on_reset();
     HRESULT hr = g_origReset(self, pp);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "Reset -> 0x%08lx", (unsigned long)hr);
@@ -184,6 +320,7 @@ HRESULT STDMETHODCALLTYPE hkResetEx(IDirect3DDevice9Ex* self, D3DPRESENT_PARAMET
     InterlockedIncrement(&g_resets);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "ResetEx #%ld", (long)g_resets);
     log_params("ResetEx", g_info.adapter, D3DDEVTYPE_HAL, g_info.window, g_info.behavior, pp, mode);
+    d2vr::stereo::on_reset();
     d2vr::shot::on_reset();
     HRESULT hr = g_origResetEx(self, pp, mode);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "ResetEx -> 0x%08lx", (unsigned long)hr);
@@ -224,6 +361,14 @@ HRESULT STDMETHODCALLTYPE hkCreateDeviceEx(IDirect3D9Ex* self, UINT adapter, D3D
                                            D3DPRESENT_PARAMETERS* pp, D3DDISPLAYMODEEX* mode, IDirect3DDevice9Ex** out)
 {
     log_params("CreateDeviceEx", adapter, type, focus, flags, pp, mode);
+    {   // The game's own IDirect3D9Ex knows the adapter LUID: the capture logs it beside the D3D11 one.
+        LUID luid = {};
+        if (self && SUCCEEDED(self->GetAdapterLUID(adapter, &luid))) {
+            d2vr::d3d9ex::set_adapter_luid(luid);
+            D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "CreateDeviceEx: adapter %u LUID %08lX-%08lX",
+                     adapter, (unsigned long)luid.HighPart, (unsigned long)luid.LowPart);
+        }
+    }
     HRESULT hr = g_origCreateDeviceEx(self, adapter, type, focus, flags, pp, mode, out);
     D2VR_LOG(d2vr::log::Cat::d3d, d2vr::log::Level::Info, "CreateDeviceEx -> 0x%08lx device=%p", (unsigned long)hr, out ? (void*)*out : nullptr);
     if (SUCCEEDED(hr) && out && *out) hook_device((IDirect3DDevice9*)*out, true);
@@ -257,5 +402,7 @@ DWORD present_thread() { return g_presentThread; }
 uintptr_t present_caller(int i) { return (i >= 0 && i < 3) ? g_presentCallers[i] : 0; }
 uintptr_t endscene_caller(int i) { return (i >= 0 && i < 3) ? g_endSceneCallers[i] : 0; }
 double present_hz() { return g_hz; }
+unsigned long submits() { return g_submits; }
+bool vr_poisoned() { return g_vrPoisoned != 0; }
 
 } // namespace d2vr::frame

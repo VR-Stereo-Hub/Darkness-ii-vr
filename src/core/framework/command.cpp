@@ -176,10 +176,14 @@ void poll(double nowMs)
         return;
     }
     g_seq++;
+    // strtok_s overwrites each newline with a NUL, so the ack was only ever the
+    // first line of a batch: keep a copy for the ack before tokenising.
+    static char ack[8192];
+    strncpy_s(ack, sizeof(ack), text, _TRUNCATE);
     char* ctx = nullptr;
     for (char* line = strtok_s(text, "\n", &ctx); line; line = strtok_s(nullptr, "\n", &ctx))
         dispatch_line(line);
-    write_ack(text);
+    write_ack(ack);
 }
 
 } // namespace d2vr::command

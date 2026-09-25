@@ -21,6 +21,23 @@ struct Config {
     int  canaryCallSite = 0;
     int  canaryHot = 0;
     int  canaryLogHz = 1;        // [Canary] LogEverySeconds: the hits/s + re-read line cadence
+    // [VR]: the OpenXR runtime layer (core/vr/openxr_runtime, adopted from Dishonored).
+    char  vrRuntime[16] = "auto";          // auto|native|steamvr
+    char  vrRuntimeJson[MAX_PATH] = "";    // a manifest for this launch (the simulator; a Steam launch)
+    int   vrDisableBadApiLayers = 1;       // the 64-bit implicit API layer guard acts (1) or only reports (0)
+    // [Screen]: rung 1, the head-locked quad both eyes see.
+    float screenDistanceM = 1.75f;
+    float screenWidthM = 2.4f;
+    int   screenHeadLocked = 1;
+    // [Stereo]: the method the seam starts on and whether it is armed.
+    char  stereoMethod[16] = "mono";
+    int   stereoArmed = 1;
+    // [Capture]: how the D3D9 backbuffer is carried into D3D11 (sync|deferred|shared|off).
+    char  captureMode[16] = "deferred";
+    int   captureSharedWait = 0;
+    int   captureBboxMs = 30000;
+    // [Device]: this game's device is already 9Ex; Ex=1 PERMITS the shared-surface capture.
+    int   deviceEx = 1;
 };
 
 const Config& get();

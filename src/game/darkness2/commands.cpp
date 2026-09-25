@@ -13,6 +13,10 @@
 #include "core/framework/status.h"
 #include "core/framework/frame_hooks.h"
 #include "core/framework/shot.h"
+#include "core/gfx/capture.h"
+#include "core/gfx/d3d11_device.h"
+#include "core/gfx/stereo.h"
+#include "core/vr/openxr_runtime.h"
 #include "core/input/inject.h"
 #include "core/util/crash.h"
 #include "core/util/diag.h"
@@ -43,9 +47,108 @@ void log_ex_flag()
     }
 }
 
+bool on_off(const char* v, bool* out)
+{
+    if (!v) return false;
+    if (!_stricmp(v, "on") || !strcmp(v, "1") || !_stricmp(v, "true")) { *out = true; return true; }
+    if (!_stricmp(v, "off") || !strcmp(v, "0") || !_stricmp(v, "false")) { *out = false; return true; }
+    return false;
+}
+
 bool game_command(const char* cmd, const char* args)
 {
     if (canaries::command(cmd, args)) return true;
+    // The stereo seam (VR-241): `stereo` / `stereo status`, `stereo <mono|aer|reentry>`
+    // (a refusal leaves the previous method running), `stereo arm on|off`.
+    if (!strcmp(cmd, "stereo")) {
+        if (!args[0] || !strcmp(args, "status")) { d2vr::stereo::log_status(); return true; }
+        char sub[16] = "", v[16] = "";
+        bool b = false;
+        if (sscanf(args, "%15s %15s", sub, v) == 2 && !strcmp(sub, "arm")) {
+            if (on_off(v, &b)) d2vr::stereo::set_armed(b);
+            else D2VR_INFO("stereo: arm on|off (now %s, selected '%s')", d2vr::stereo::armed() ? "armed" : "parked", d2vr::stereo::wanted_name());
+            return true;
+        }
+        d2vr::stereo::choose(args);   // logs the refusal itself; an explicit choice is the selection
+        return true;
+    }
+    // The carry: `capture` prints the cost per present; `capture mode sync|deferred|shared|off`
+    // is the live A/B; `capture sharedwait on|off`; `capture bbox off|<ms>`; `capture reinit`.
+    if (!strcmp(cmd, "capture")) {
+        char sub[16] = "", m[16] = "";
+        bool b = false;
+        if (sscanf(args, "%15s %15s", sub, m) == 2 && !strcmp(sub, "mode")) {
+            if (!_stricmp(m, "shared") && !d2vr::config::get().deviceEx) {
+                D2VR_WARN("capture: mode shared REFUSED - [Device] Ex=0 forbids the shared-surface path on this run; staying on %s",
+                          d2vr::capture::mode_name());
+                return true;
+            }
+            d2vr::capture::set_mode(m);   // logs the refusal itself
+            return true;
+        }
+        if (sscanf(args, "%15s %15s", sub, m) == 2 && !strcmp(sub, "sharedwait") && on_off(m, &b)) { d2vr::capture::set_shared_wait(b); return true; }
+        if (!strcmp(args, "reinit")) { d2vr::capture::request_reinit(); return true; }
+        if (sscanf(args, "%15s %15s", sub, m) == 2 && !strcmp(sub, "bbox")) {
+            if (!strcmp(m, "off")) { d2vr::capture::set_bbox_ms(0); return true; }
+            unsigned ms = 0;
+            if (sscanf(m, "%u", &ms) == 1) { d2vr::capture::set_bbox_ms(ms); return true; }
+            D2VR_WARN("capture: bbox wants off or an interval in ms (capture bbox off|<ms>) - got '%s'", m);
+            return true;
+        }
+        const d2vr::capture::Cost c = d2vr::capture::cost();
+        D2VR_INFO("capture: mode=%s probe=%s cost/present rtd=%u lock=%u copy=%u upload=%u blit=%u total=%u us "
+                  "(%u grabs in the window) delivered serial %lu of %lu slot=%d sharedWait=%d fenceWaits=%u timeouts=%u "
+                  "readWaits=%u readTimeouts=%u reinits=%u bboxEvery=%ums (%u samples) "
+                  "(capture mode sync|deferred|shared|off, capture sharedwait on|off, capture bbox off|<ms>, capture reinit)",
+                  d2vr::capture::mode_name(),
+                  !d2vr::capture::probed() ? "not yet" : d2vr::capture::shared_available() ? "shared AVAILABLE" : "shared REFUSED",
+                  c.rtdUs, c.lockUs, c.copyUs, c.uploadUs, c.blitUs, c.totalUs, c.grabsInWindow,
+                  (unsigned long)d2vr::capture::delivered_serial(), (unsigned long)d2vr::capture::serial(),
+                  d2vr::capture::delivered_slot(), d2vr::capture::shared_wait() ? 1 : 0,
+                  d2vr::capture::fence_waits(), d2vr::capture::fence_timeouts(), d2vr::capture::read_waits(),
+                  d2vr::capture::read_timeouts(), d2vr::capture::reinits(), d2vr::capture::bbox_ms(),
+                  d2vr::capture::bbox_samples());
+        return true;
+    }
+    // The mono screen's geometry, live (the headset A/B lever): `screen <distM> <widthM>`,
+    // `screen headlock on|off`.
+    if (!strcmp(cmd, "screen")) {
+        char sub[16] = "", v[16] = "";
+        bool b = false;
+        float dist = 0.0f, width = 0.0f;
+        if (sscanf(args, "%15s %15s", sub, v) == 2 && !strcmp(sub, "headlock") && on_off(v, &b)) {
+            d2vr::vr::set_screen_head_locked(b);
+            D2VR_INFO("screen: headlock %s (the quad %s)", b ? "on" : "off", b ? "follows the head" : "stays where it was in the room");
+            return true;
+        }
+        if (sscanf(args, "%f %f", &dist, &width) == 2 && dist > 0.0f && width > 0.0f) {
+            d2vr::vr::set_screen(dist, width);
+            D2VR_INFO("screen: %.2f m away, %.2f m wide (the runtime clamps; `stereo status` shows the result)", dist, width);
+            return true;
+        }
+        D2VR_INFO("screen: <distM> <widthM> | headlock on|off  ([Screen] DistanceMeters=%.2f WidthMeters=%.2f HeadLocked=%d)",
+                  d2vr::config::get().screenDistanceM, d2vr::config::get().screenWidthM, d2vr::config::get().screenHeadLocked);
+        return true;
+    }
+    if (!strcmp(cmd, "xr")) {
+        D2VR_INFO("xr: runtime \"%s\" session %s live=%d running=%d everFocused=%d swapchainFmt=%lld displayPeriodNs=%lld "
+                  "submits=%lu poisoned=%d d3d11=%s adapter=\"%s\"",
+                  d2vr::vr::runtime_name(), d2vr::vr::session_state_name(), (int)d2vr::vr::session_live(),
+                  (int)d2vr::vr::session_running(), (int)d2vr::vr::ever_focused(), (long long)d2vr::vr::swapchain_format(),
+                  (long long)d2vr::vr::display_period_ns(), d2vr::frame::submits(), (int)d2vr::frame::vr_poisoned(),
+                  d2vr::d3d11::created() ? "created" : "none", d2vr::d3d11::adapter_name());
+        return true;
+    }
+    if (!strcmp(cmd, "pace")) { d2vr::vr::handle_pace_command(args); return true; }
+    // `quit` reaches here on the present thread before the input lane posts WM_CLOSE:
+    // the session comes down on the thread that owns every runtime call, never from
+    // DLL_PROCESS_DETACH under the loader lock. Not handled: the word falls through.
+    if (!strcmp(cmd, "quit")) {
+        D2VR_INFO("quit: tearing the VR session down on the present thread first");
+        d2vr::stereo::shutdown();
+        d2vr::vr::shutdown("quit");
+        return false;
+    }
     if (!strcmp(cmd, "route")) { d2vr::proxy::log_route_report(); d2vr::proxy::log_module_census("route"); return true; }
     if (!strcmp(cmd, "fingerprint")) { const Fingerprint& f = fingerprint(); D2VR_INFO("fingerprint ok=%d", (int)f.ok); return true; }
     if (!strcmp(cmd, "callers")) {
@@ -130,6 +233,34 @@ void status_provider(d2vr::status::Writer& w)
             w.end_obj();
         }
     w.end_obj();
+    w.obj("xr");
+        w.kv("runtime", d2vr::vr::runtime_name());
+        w.kv("session", d2vr::vr::session_state_name());
+        w.kv("live", d2vr::vr::session_live());
+        w.kv("everFocused", d2vr::vr::ever_focused());
+        w.kv("submits", d2vr::frame::submits());
+        w.kv("poisoned", d2vr::frame::vr_poisoned());
+        w.kv("d3d11", d2vr::d3d11::created());
+        w.kv("adapter", d2vr::d3d11::adapter_name());
+    w.end_obj();
+    d2vr::stereo::status(w);
+    {
+        const d2vr::capture::Cost c = d2vr::capture::cost();
+        w.obj("capture");
+            w.kv("mode", d2vr::capture::mode_name());
+            w.kv("probed", d2vr::capture::probed());
+            w.kv("sharedAvailable", d2vr::capture::shared_available());
+            w.kv("grabs", (unsigned long)d2vr::capture::grabs());
+            w.kv("width", (int)d2vr::capture::width());
+            w.kv("height", (int)d2vr::capture::height());
+            w.kv("costTotalUs", (unsigned long)c.totalUs);
+            w.kv("costRtdUs", (unsigned long)c.rtdUs);
+            w.kv("costLockUs", (unsigned long)c.lockUs);
+            w.kv("costUploadUs", (unsigned long)c.uploadUs);
+            w.kv("costBlitUs", (unsigned long)c.blitUs);
+            w.kv("grabsInWindow", (unsigned long)c.grabsInWindow);
+        w.end_obj();
+    }
     w.obj("counters");
         w.kv("commands", (unsigned long)d2vr::command::lines());
         w.kv("commandBatches", (unsigned long)d2vr::command::sequence());
@@ -155,8 +286,9 @@ void present_tick(IDirect3DDevice9*, double nowMs)
     }
     canaries::tick(nowMs);
     D2VR_LOG_EVERY_MS(D2VR_CAT, d2vr::log::Level::Info, 30000,
-        "heartbeat: %lu presents at %.1f Hz, %lu commands, %lu status writes, %lu shots",
-        d2vr::frame::presents(), d2vr::frame::present_hz(), d2vr::command::lines(), d2vr::status::writes(), d2vr::shot::count());
+        "heartbeat: %lu presents at %.1f Hz, %lu commands, %lu status writes, %lu shots, xr=%s/%s stereo=%s submits=%lu",
+        d2vr::frame::presents(), d2vr::frame::present_hz(), d2vr::command::lines(), d2vr::status::writes(), d2vr::shot::count(),
+        d2vr::vr::runtime_name(), d2vr::vr::session_state_name(), d2vr::stereo::active_name(), d2vr::frame::submits());
 }
 
 } // namespace

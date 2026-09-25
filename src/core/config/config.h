@@ -21,6 +21,8 @@ struct Config {
     int  canaryCallSite = 0;
     int  canaryHot = 0;
     int  canaryLogHz = 1;        // [Canary] LogEverySeconds: the hits/s + re-read line cadence
+    // [Lua]: R2's in-game half, the three wraps and the chunk runner. Default OFF.
+    int  luaEnabled = 0;
     // [VR]: the OpenXR runtime layer (core/vr/openxr_runtime, adopted from Dishonored).
     char  vrRuntime[16] = "auto";          // auto|native|steamvr
     char  vrRuntimeJson[MAX_PATH] = "";    // a manifest for this launch (the simulator; a Steam launch)

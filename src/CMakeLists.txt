@@ -81,6 +81,7 @@ add_library(d2vr_proxy SHARED
     game/darkness2/build_fingerprint.cpp
     game/darkness2/canaries.cpp    game/darkness2/canaries.h
     game/darkness2/commands.cpp
+    game/darkness2/lua/lane.cpp    game/darkness2/lua/lane.h
 )
 set_target_properties(d2vr_proxy PROPERTIES OUTPUT_NAME "d3d9" PREFIX "")
 add_dependencies(d2vr_proxy d2vr_version)

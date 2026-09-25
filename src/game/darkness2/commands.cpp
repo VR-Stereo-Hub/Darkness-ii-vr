@@ -7,6 +7,7 @@
 #include "game/darkness2/game.h"
 #include "game/darkness2/patterns.h"
 #include "game/darkness2/canaries.h"
+#include "game/darkness2/lua/lane.h"
 #include "proxy/proxy.h"
 #include "core/config/config.h"
 #include "core/framework/command.h"
@@ -58,6 +59,7 @@ bool on_off(const char* v, bool* out)
 bool game_command(const char* cmd, const char* args)
 {
     if (canaries::command(cmd, args)) return true;
+    if (lua::command(cmd, args)) return true;
     // The stereo seam (VR-241): `stereo` / `stereo status`, `stereo <mono|aer|reentry>`
     // (a refusal leaves the previous method running), `stereo arm on|off`.
     if (!strcmp(cmd, "stereo")) {
@@ -233,6 +235,9 @@ void status_provider(d2vr::status::Writer& w)
             w.end_obj();
         }
     w.end_obj();
+    w.obj("lua");
+        lua::status(w);
+    w.end_obj();
     w.obj("xr");
         w.kv("runtime", d2vr::vr::runtime_name());
         w.kv("session", d2vr::vr::session_state_name());
@@ -285,8 +290,12 @@ void present_tick(IDirect3DDevice9*, double nowMs)
         g_canariesArmed = true;
         if (d2vr::diag::skip("canaries")) D2VR_WARN("canaries: SKIPPED by D2VR_SKIP");
         else canaries::init_from_config();
+        // The Lua lane arms the same way: from the first present, never earlier.
+        if (d2vr::diag::skip("lua")) D2VR_WARN("lua: SKIPPED by D2VR_SKIP");
+        else lua::init_from_config();
     }
     canaries::tick(nowMs);
+    lua::tick(nowMs);
     D2VR_LOG_EVERY_MS(D2VR_CAT, d2vr::log::Level::Info, 30000,
         "heartbeat: %lu presents at %.1f Hz, %lu commands, %lu status writes, %lu shots, xr=%s/%s stereo=%s submits=%lu",
         d2vr::frame::presents(), d2vr::frame::present_hz(), d2vr::command::lines(), d2vr::status::writes(), d2vr::shot::count(),

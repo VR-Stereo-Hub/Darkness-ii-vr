@@ -111,9 +111,25 @@ constexpr size_t    kLuaStateNCcalls   = 0x34;         // u16
 constexpr int       kLuaGlobalsIndex   = -10002;
 constexpr int       kLuaRegistryIndex  = -10000;
 // The SWIG module structs (tools/swig-dump.py, docs/darkness2/swig-api.md):
-// { types, size, next, type_initial, cast_initial, clientdata }; size at +4.
+// { types, size, next, type_initial, cast_initial, clientdata }; size at +4,
+// type_initial at +0xC. `lua swigcheck` re-reads all ten at runtime against
+// the map's type counts and type_initial pointers (the map's byte-verify).
 constexpr uintptr_t kSwigModuleEngine    = 0x010B8F94;   // 127 types, 72 classes
 constexpr uintptr_t kSwigModuleD2Game    = 0x010C5AB4;   // 154 types, 40 classes
+struct SwigModuleRef { const char* name; uintptr_t module; uintptr_t typeInitial; uint32_t types; };
+constexpr SwigModuleRef kSwigModules[10] = {
+    { "Engine",      0x010B8F94, 0x010BD308, 127 },
+    { "GraphicsRes", 0x010A4214, 0x010A4810,  20 },
+    { "Effects",     0x010C2BEC, 0x010C3318,  70 },
+    { "Game",        0x010AD424, 0x010AECE0, 117 },
+    { "Sound",       0x010A856C, 0x010A8584,  15 },
+    { "Npc",         0x010D374C, 0x010D3F30,  70 },
+    { "UISys",       0x010B17C4, 0x010B24C0,  80 },
+    { "Script",      0x010A02CC, 0x010A0B40,  31 },
+    { "Framework",   0x010A60AC, 0x010A6920,  76 },
+    { "D2_Game",     0x010C5AB4, 0x010C8720, 154 },
+};
 constexpr uintptr_t kSwigCameraControllerBase = 0x010B93D8;   // swig_lua_class; SetBaseFovOverride wrapper 0xDBDB90 -> vtable +0xE4 (float)
+constexpr uintptr_t kSwigGetBaseFovOverride   = 0x00DBDC60;   // the read-back wrapper the FOV chunk calls after the set
 
 } // namespace d2vr::game::pat

@@ -34,8 +34,10 @@ handoff.
   has `@capassert`, `@capsame`, `@capdiff`; the ack carries the whole batch; the proxy's
   import list is asserted against `tests/golden/d3d9-imports.txt`.
 - **Branch and PR**: one branch for VR-241 + VR-240 + the R2 research (the user's decision),
-  `claude/vr-241-runtime-mono-lua`, PR against `staging` with `Fixes VR-241, VR-240` and
-  `Ref VR-233`. Not merged; the merge is the user's.
+  `claude/vr-241-runtime-mono-lua`, PR #3 against `staging`
+  (https://github.com/VR-Stereo-Hub/Darkness-ii-vr/pull/3) with `Fixes VR-241, VR-240` and
+  `Ref VR-233`. Not merged; the merge is the user's, then VR-241 and VR-240 go to Done
+  through the MCP. They are In Review with the PR attached.
 - R0 count: 4 of 10 launches with the banner (2 in session 1, 2 here; the refused direct
   start loaded nothing and does not count).
 

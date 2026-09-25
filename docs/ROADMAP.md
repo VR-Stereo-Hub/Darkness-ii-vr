@@ -94,7 +94,9 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
 - **Deliverable**: the mono screen accepted in a headset; head rotation on the game thread
   (yaw delta, pitch absolute); positional tracking on the camera position (crouch, lean,
   roomscale) with a neck-pivot cancel; the render size requested through the engine's own
-  settings path.
+  settings path; **the FOV set from the headset's own projection, live**, with the submitted
+  claim always equal to the rendered FOV (the Dishonored FOV-feedback traps: a readback that
+  fed itself shrank gameplay after a load).
 - **Darkness difference**: the Lua lane is available for one-shot config (FOV, near plane),
   but per-tick rotation is written at the engine tick from the mod, not through Lua, to keep
   latency at one tick.
@@ -106,6 +108,8 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   - [ ] A 30 cm lean moves the camera 30 cm in-world, measured against a doorway of known
         width; pivot error under 2 cm
   - [ ] The requested render size equals the size the swap chain reports
+  - [ ] The rendered FOV read from the projection constant equals the runtime's within 0.5
+        degrees, and returns to the same value after a load, a cinematic, a zoom and a death
 
 ## S2 - True stereo by SequentialReentry (M2)
 
@@ -129,6 +133,8 @@ ordered by what they unblock; R0 and R1 gate everything, R2 is the biggest lever
   - [ ] A fixed target under head rotation shows no double image
   - [ ] Deferred lights and cel outlines register in both eyes with no offset
   - [ ] Headset: fusion confirmed, one full level called comfortable
+  - [ ] A render-quality change from 100 to 70 percent takes effect without a restart, with
+        the three size lines agreeing and the FOV readback unchanged
 
 ## S3 - Motion controls (M3)
 

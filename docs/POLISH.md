@@ -16,7 +16,8 @@ every item is a quality the features must have. M4 releases when this list is cl
 | **UI placement** | Every one of the 61 HUD movies classified to an anchor or explicitly left head-locked, in a table; per-hand reticles on their rays; wrist elements readable at arm's length (text height measured at the wrist, the user's legibility judgement); each new menu opens where the player is looking; readers keep the local rotation they opened with |
 | **Cinematics** | All 14 finishers and every scripted first-person scene keep the head free and the horizon upright; hand-back within one tick of the anim's end event with no pop in either direction; Bink videos on the quad without flicker at the transition |
 | **Dual-wield fantasy** | Two targets hit simultaneously from two hands; the left trigger always fires the left gun whatever the game option says; no camera movement on aim; reload plays on the hand while the gun stays on the controller |
-| **Performance** | The per-eye render size chosen by the cadence beat, not by taste; the per-eye cost of the tentacles and the HUD redirection logged and under 0.5 ms combined; diagnostics that cost frames ship turned off and the banner says so |
+| **Field of view** | The rendered FOV equals the headset's projection within 0.5 degrees, follows a render-quality change, and returns to the same value after every load, cinematic, zoom and death; the submitted claim equals the rendered FOV on every frame (no fisheye, no square render) |
+| **Performance** | The per-eye render size chosen by the cadence beat, not by taste, with a live 50 to 200 percent quality lever whose beat line shows when the 90 Hz cliff is crossed; the per-eye cost of the tentacles and the HUD redirection logged and under 0.5 ms combined; diagnostics that cost frames ship turned off and the banner says so |
 | **Fail soft** | Every hook byte-verified at load; a failed verify disables that feature, says so in `status.json` and the panel, and the game still plays flat; a wrong game build refuses code hooks and stays playable |
 | **Support** | A run always produces a log, even one that dies in the first second; the crash file carries the run identity; one-click log collection bounded in size; the log can explain a failure without another run |
 
@@ -32,6 +33,9 @@ Each of these is a rule with a measurement behind it in the Dishonored repo.
   slots per frame doubles edges. Watch the pair rate, not the tick mean.
 - Cancel the neck pivot with measured constants (standing and crouched differ); keep roll out
   of the neck arc.
+- Set the FOV from the runtime's projection and claim what was rendered, read back from the
+  uploaded constant, never from a stored wish or a contraction ratio: the readback that fed
+  itself cost Dishonored three tickets after 1.0.
 - Remove camera shake, head bob and animation-driven sway at the source, per category, each
   with an A/B: "the view moves only when you do." Disable the collision-pop glide.
 - Upright composition in cinematics: remove the authored tilt before applying the physical
